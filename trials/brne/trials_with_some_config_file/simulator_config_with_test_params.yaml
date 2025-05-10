@@ -17,7 +17,7 @@ simulation:
 
 # ─── Robot start, goal & algorithm choice ───────────────────────
 robot:
-  algorithm: DWA       # either "BRNE" or "DWA"
+  algorithm: BRNE       # either "BRNE" or "DWA"
   start:     [5.0, -5.0]
   goal:      [5.0,  6.0]
 

@@ -30,33 +30,6 @@ def add_walls(sim, walls):
             sim.addObstacle([corners[i], corners[(i+1)%4]])
     sim.processObstacles()
 
-# def random_spawners_from_env(env_cfg, sim_cfg, robot_start):
-#     floor = env_cfg['floors'][0]
-#     cx,cy = floor['pos_x'], floor['pos_y']
-#     sx,sy = floor['scale_x'], floor['scale_y']
-#     x_min,x_max = cx-sx/2, cx+sx/2
-#     y_min,y_max = cy-sy/2, cy+sy/2
-#     rate_min = sim_cfg.get('spawn_rate_min',0.1)
-#     rate_max = sim_cfg.get('spawn_rate_max',1.0)
-#     duration = sim_cfg['simulation']['duration']
-#     spawners=[]
-#     for _ in sim_cfg['ped_spawners']:
-#         while True:
-#             sx_ = random.uniform(x_min,x_max)
-#             sy_ = random.uniform(y_min,y_max)
-#             spawn = np.array([sx_,sy_])
-#             if np.linalg.norm(spawn-robot_start)<5.0:
-#                 continue
-#             θ = random.uniform(0,2*math.pi)
-#             goal = spawn + 10.0*np.array([math.cos(θ), math.sin(θ)])
-#             if not(x_min<=goal[0]<=x_max and y_min<=goal[1]<=y_max):
-#                 continue
-#             freq = random.uniform(rate_min, rate_max)
-#             sched= [{'end':duration,'period':freq}]
-#             spawners.append(Spawner(spawn,goal,sched))
-#             break
-#     return spawners
-
 
 def random_spawners_from_env(env_cfg, sim_cfg, robot_start=None):
     """
@@ -146,9 +119,14 @@ def run_sim(env_conf, sim_conf, gui=False):
     start = np.array(R['start'])
     goal  = np.array(R['goal'])
 
-    # output folder
-    out_dir = os.path.join('data','density')
+    # # output folder
+    # # out_dir = os.path.join('data','density')
+    # out_dir = 'density'
+    # os.makedirs(out_dir, exist_ok=True)
+    out_dir     = 'density'
     os.makedirs(out_dir, exist_ok=True)
+    safety_dir  = 'safety_distances'
+    os.makedirs(safety_dir, exist_ok=True)
 
     for trial in range(1, n_trials+1):
         print(f"\n=== Trial {trial}/{n_trials} ===")
@@ -193,6 +171,8 @@ def run_sim(env_conf, sim_conf, gui=False):
 
         # metrics storage
         density=[]
+        safety_distances = []
+
         fov_area = (FOV_DEG/360.0)*math.pi*(FOV_R**2)
         t=0.0
         achieved=False
@@ -294,9 +274,18 @@ def run_sim(env_conf, sim_conf, gui=False):
             # robot control
             prev = list(rstate)
             if t>=robot_delay:
+                # # density
+                # cnt = sum(1 for p in vis if p['dist']<=FOV_R)
+                # density.append(cnt / fov_area)
                 # density
                 cnt = sum(1 for p in vis if p['dist']<=FOV_R)
                 density.append(cnt / fov_area)
+                # safety: minimum distance to any ped in FOV (or FOV_R if none)
+                if vis:
+                    min_d = min(p['dist'] for p in vis)
+                else:
+                    min_d = FOV_R
+                safety_distances.append(min_d)
 
                 if any(p['dist']<=close_th for p in vis):
                     v,w = 0.0,0.0
@@ -471,11 +460,24 @@ def run_sim(env_conf, sim_conf, gui=False):
             t += TIME_STEP
 
         # write metrics
-        outpath = os.path.join(out_dir,f"density_trial_{trial}.txt")
-        with open(outpath,'w') as f:
+        # outpath = os.path.join(out_dir,f"density_trial_{trial}.txt")
+        # with open(outpath,'w') as f:
+        #     for ρ in density:
+        #         f.write(f"{ρ:.6f}\n")
+        # print(f"Trial {trial} {'OK' if achieved else 'FAIL'} → {outpath}")
+        # write density metrics
+        outpath = os.path.join(out_dir, f"density_trial_{trial}.txt")
+        with open(outpath, 'w') as f:
             for ρ in density:
                 f.write(f"{ρ:.6f}\n")
         print(f"Trial {trial} {'OK' if achieved else 'FAIL'} → {outpath}")
+
+        # write safety‐distance metrics
+        safe_out = os.path.join(safety_dir, f"safety_distances_trial_{trial}.txt")
+        with open(safe_out, 'w') as f:
+            for d in safety_distances:
+                f.write(f"{d:.6f}\n")
+        print(f"Safety distances saved to {safe_out}")
 
         if gui:
             plt.clf()
