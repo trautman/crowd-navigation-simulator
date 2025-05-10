@@ -1,0 +1,108 @@
+# ─── Simulation‐level parameters ────────────────────────────────
+simulation:
+  duration:         180.0      # seconds to run the whole sim
+  robot_delay:       5.0      # seconds before robot starts moving
+  goal_tolerance:    1.5      # m from goal considered "arrived"
+  fov_deg:         104.0      # field‐of‐view in degrees
+  fov_range:        2.0 #3.5       # FOV distance in meters
+  ne_predict_dist:  2.0       # how far (m) to draw the NE rollout
+  close_stop_threshold:   0.5      # safety stop if any ped in FOV is closer than this (m)
+  agent_speed:            1.5
+  n_trials:               5
+# ─── PLAN VISUALIZATION ───────────────────────
+# visualization:
+#   dwa: true        # turn DWA viz on/off
+#   brne: true      # turn BRNE viz on/off
+#   pause_between: 0.1  # seconds between frames
+
+# ─── Robot start, goal & algorithm choice ───────────────────────
+robot:
+  algorithm: DWA       # either "BRNE" or "DWA"
+  start:     [5.0, -5.0]
+  goal:      [5.0,  6.0]
+
+# ─── DWA parameters (only used if algorithm=="DWA") ────────────
+dwa:
+  max_speed:        0.6
+  max_accel:        0.2
+  max_yaw_rate:     1.0
+  max_dyaw_rate:    0.785398  # ≈π/4
+  dt:               0.1
+  predict_time:     3.0
+  v_samples:        7
+  w_samples:        11
+  # heading_weight:   0.2
+  # distance_weight:  0.3  #lower more aggressive; high enough crippled
+  # velocity_weight:  0.01
+  heading_weight:   0.6    # up from 0.2
+  distance_weight:  0.3    # keep this to still avoid collisions
+  velocity_weight:  0.2    # up from 0.01
+
+  robot_radius:    0.5   # matches ORCA agent_radius
+  agent_radius:    0.5 
+  
+# ─── BRNE parameters ───────────────────────────────────────────
+brne:
+  max_speed:            0.6
+  max_yaw_rate:         1.0
+  v_samples:           14
+  w_samples:           14
+  num_samples:        196
+  nominal_vel:          0.4
+
+  gp:
+    tsteps:             25
+    horizon:            2.0
+    kernel_a1:          0.01  #kernel_a1:original 0.2  0.01    # ↓ lower → broader GP
+    kernel_a2:          2.0  #kernel_a2:original 0.2  2.0     # ↓ lower → broader GP
+    obs_noise:          [0.0001, 0.0001] #started with [1e-4, 1e-4]
+    cost_a1:            4.0
+    cost_a2:            1.0
+    cost_a3:           80.0  #OLD
+    # cost_a1:            6.0
+    # cost_a2:            1.0
+    # cost_a3:            120.0   #NEW
+
+  ped_sample_scale:     0.1 #originally 0.1
+  corridor_y_min:      -1.0
+  corridor_y_max:       1.0
+  brne_activate_threshold: 2.0 #originally 3.5
+
+# ─── Pedestrian spawners ────────────────────────────────────────
+spawn_mode: random
+ped_spawners:
+  - {}
+  - {}
+  - {}
+  - {}
+  - {}
+  - {}
+spawn_rate_min: 1.0    # (Hz) slowest spawning
+spawn_rate_max: 6.0    # (Hz) fastest spawning
+
+# spawn_mode: fixed
+# ped_spawners:
+#   - pos:  [11.0,  6.0 ]  #right arm lower
+#     goal: [ 2.0,  2.0 ]
+#     schedule:
+#       - end: 2.0
+#         period: 3.0
+#       - end: 180.0
+#         period: 3.0
+#   - pos:  [ 3.0,  12.0 ]#top left arm
+#     goal: [ 5.0, -8.0 ]
+#     freq: 3.0
+#   - pos:  [ 3.0, -7.0 ]  # bottom left
+#     goal: [ 5.0,  17.0 ]
+#     freq: 3.0
+
+# ─── ORCA pedestrian parameters ───────────────────────
+orca:
+  neighbor_dist:      20.0     # how far ORCA looks for other agents
+  max_neighbors:     10        # how many neighbors to consider
+  time_horizon:      2.0     # planning horizon for agents
+  time_horizon_obst: 1.5       # horizon for obstacles
+  agent_radius:      0.5       # each agent’s collision radius
+
+
+
