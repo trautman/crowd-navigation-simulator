@@ -119,14 +119,23 @@ def run_sim(env_conf, sim_conf, gui=False):
     start = np.array(R['start'])
     goal  = np.array(R['goal'])
 
-    # # output folder
-    # # out_dir = os.path.join('data','density')
-    # out_dir = 'density'
+    # out_dir     = 'density'
     # os.makedirs(out_dir, exist_ok=True)
-    out_dir     = 'density'
+    # safety_dir  = 'safety_distances'
+    # os.makedirs(safety_dir, exist_ok=True)
+        # output folders (we run inside /data/)
+    out_dir            = 'density'
     os.makedirs(out_dir, exist_ok=True)
-    safety_dir  = 'safety_distances'
+    safety_dir         = 'safety_distances'
     os.makedirs(safety_dir, exist_ok=True)
+    trans_vel_dir      = 'translational_velocity'
+    os.makedirs(trans_vel_dir, exist_ok=True)
+    path_len_dir       = 'path_length'
+    os.makedirs(path_len_dir, exist_ok=True)
+    time_dir           = 'travel_time'
+    os.makedirs(time_dir, exist_ok=True)
+    stop_time_dir      = 'time_not_moving'
+    os.makedirs(stop_time_dir, exist_ok=True)
 
     for trial in range(1, n_trials+1):
         print(f"\n=== Trial {trial}/{n_trials} ===")
@@ -170,8 +179,16 @@ def run_sim(env_conf, sim_conf, gui=False):
         sim.setAgentMaxSpeed(rid, max_spd)
 
         # metrics storage
-        density=[]
-        safety_distances = []
+        # density=[]
+        # safety_distances = []
+                # metrics storage
+        density              = []
+        safety_distances     = []
+        translational_vels   = []
+        dist_traveled        = []
+        time_elapsed_list    = []
+        time_not_moving_list = []
+        prev_pos = sim.getAgentPosition(rid)
 
         fov_area = (FOV_DEG/360.0)*math.pi*(FOV_R**2)
         t=0.0
@@ -250,8 +267,8 @@ def run_sim(env_conf, sim_conf, gui=False):
         # run simulation loop
         while t < duration:
             frame_count += 1
-            # print(f"[DEBUG] Frame {frame_count}: entering loop t={t:.2f}", flush=True)
-            # spawn
+            dt = TIME_STEP
+            
             for sp in ped_spawners:
                 p = sp.current_period(t)
                 if t >= sp.last_spawn + p:
@@ -286,6 +303,21 @@ def run_sim(env_conf, sim_conf, gui=False):
                 else:
                     min_d = FOV_R
                 safety_distances.append(min_d)
+
+
+                           # record new metrics
+                translational_vels.append(v)
+                time_elapsed_list.append(t)
+                cur_pos = sim.getAgentPosition(rid)
+                dx, dy = cur_pos[0] - prev_pos[0], cur_pos[1] - prev_pos[1]
+                dist = math.hypot(dx, dy)
+                dist_traveled.append(dist)
+                prev_pos = cur_pos
+                if abs(v) < 1e-8 and abs(w) < 1e-8:
+                    time_not_moving_list.append(dt)
+                else:
+                    time_not_moving_list.append(0.0)
+
 
                 if any(p['dist']<=close_th for p in vis):
                     v,w = 0.0,0.0
@@ -459,12 +491,6 @@ def run_sim(env_conf, sim_conf, gui=False):
 
             t += TIME_STEP
 
-        # write metrics
-        # outpath = os.path.join(out_dir,f"density_trial_{trial}.txt")
-        # with open(outpath,'w') as f:
-        #     for ρ in density:
-        #         f.write(f"{ρ:.6f}\n")
-        # print(f"Trial {trial} {'OK' if achieved else 'FAIL'} → {outpath}")
         # write density metrics
         outpath = os.path.join(out_dir, f"density_trial_{trial}.txt")
         with open(outpath, 'w') as f:
@@ -478,6 +504,30 @@ def run_sim(env_conf, sim_conf, gui=False):
             for d in safety_distances:
                 f.write(f"{d:.6f}\n")
         print(f"Safety distances saved to {safe_out}")
+
+                # write translational velocities
+        tv_out = os.path.join(trans_vel_dir, f"translational_velocity_trial_{trial}.txt")
+        with open(tv_out, 'w') as f:
+            for tv in translational_vels:
+                f.write(f"{tv:.6f}\n")
+
+        # write path lengths
+        pl_out = os.path.join(path_len_dir, f"path_length_trial_{trial}.txt")
+        with open(pl_out, 'w') as f:
+            for d in dist_traveled:
+                f.write(f"{d:.6f}\n")
+
+        # write elapsed times
+        te_out = os.path.join(time_dir, f"travel_time_trial_{trial}.txt")
+        with open(te_out, 'w') as f:
+            for te in time_elapsed_list:
+                f.write(f"{te:.6f}\n")
+
+        # write time-not-moving
+        tn_out = os.path.join(stop_time_dir, f"time_not_moving_trial_{trial}.txt")
+        with open(tn_out, 'w') as f:
+            for tm in time_not_moving_list:
+                f.write(f"{tm:.6f}\n")
 
         if gui:
             plt.clf()
