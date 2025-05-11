@@ -9,6 +9,8 @@ simulation:
   close_stop_threshold:   0.5      # safety stop if any ped in FOV is closer than this (m)
   agent_speed:            1.5
   n_trials:               5
+  # how often to print a progress update (in simulation seconds)
+  report_interval: 30.0
 # ─── PLAN VISUALIZATION ───────────────────────
 # visualization:
 #   dwa: true        # turn DWA viz on/off

@@ -95,6 +95,8 @@ def run_sim(env_conf, sim_conf, gui=False):
 
     # ── Visualization settings ───────────────────────────────
     viz_cfg      = sim_cfg.get('visualization', {})
+    report_interval = float(
+        sim_cfg.get('simulation', {}).get('report_interval', 10.0))
     ENABLE_DWA_VIZ  = viz_cfg.get('dwa', False)
     ENABLE_BRNE_VIZ = viz_cfg.get('brne', False)
     VIZ_PAUSE     = viz_cfg.get('pause_between', TIME_STEP)
@@ -139,6 +141,10 @@ def run_sim(env_conf, sim_conf, gui=False):
 
     for trial in range(1, n_trials+1):
         print(f"\n=== Trial {trial}/{n_trials} ===")
+        # record real‐wall clock start for this trial
+        trial_wall_start = time.perf_counter()
+
+        next_report = report_interval
 
         # robot controller
         if algo=='BRNE':
@@ -490,6 +496,16 @@ def run_sim(env_conf, sim_conf, gui=False):
                 break
 
             t += TIME_STEP
+
+            # ── report progress every report_interval s ──────────────────────────────
+            if t >= next_report:
+                # compute wall‐clock elapsed
+                wall_elapsed = time.perf_counter() - trial_wall_start
+                print(
+                    f"[Trial {trial}] sim {t:.1f}/{duration:.1f}s    "
+                    f"real {wall_elapsed:.1f}s"
+                )
+                next_report += report_interval
 
         # write density metrics
         outpath = os.path.join(out_dir, f"density_trial_{trial}.txt")
