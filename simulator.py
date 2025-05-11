@@ -307,13 +307,13 @@ def run_sim(env_conf, sim_conf, gui=False):
 
                            # record new metrics
                 translational_vels.append(v)
-                time_elapsed_list.append(t)
+                time_elapsed_list.append(dt)
                 cur_pos = sim.getAgentPosition(rid)
                 dx, dy = cur_pos[0] - prev_pos[0], cur_pos[1] - prev_pos[1]
                 dist = math.hypot(dx, dy)
                 dist_traveled.append(dist)
                 prev_pos = cur_pos
-                if abs(v) < 1e-8 and abs(w) < 1e-8:
+                if abs(v) < 1e-8 and abs(w) < 1e-8 and t == robot_delay:
                     time_not_moving_list.append(dt)
                 else:
                     time_not_moving_list.append(0.0)

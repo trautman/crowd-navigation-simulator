@@ -1,14 +1,14 @@
 # ─── Simulation‐level parameters ────────────────────────────────
 simulation:
   duration:         240.0      # seconds to run the whole sim
-  robot_delay:       5.0      # seconds before robot starts moving
+  robot_delay:       30.0      # seconds before robot starts moving
   goal_tolerance:    1.5      # m from goal considered "arrived"
   fov_deg:         104.0      # field‐of‐view in degrees
   fov_range:        2.0 #3.5       # FOV distance in meters
   ne_predict_dist:  2.0       # how far (m) to draw the NE rollout
   close_stop_threshold:   0.5      # safety stop if any ped in FOV is closer than this (m)
   agent_speed:            1.5
-  n_trials:               5
+  n_trials:               25
 # ─── PLAN VISUALIZATION ───────────────────────
 # visualization:
 #   dwa: true        # turn DWA viz on/off
@@ -19,7 +19,7 @@ simulation:
 robot:
   algorithm: BRNE       # either "BRNE" or "DWA"
   start:     [5.0, -5.0]
-  goal:      [5.0,  6.0]
+  goal:      [5.0,  6.5]
 
 # ─── DWA parameters (only used if algorithm=="DWA") ────────────
 dwa:
