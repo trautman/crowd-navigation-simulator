@@ -1,5 +1,6 @@
 import os
 import argparse
+import yaml
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -18,7 +19,8 @@ def load_metric(data_dir, prefix):
     ])
     metrics = []
     for fname in files:
-        with open(os.path.join(data_dir, fname), 'r') as f:
+        path = os.path.join(data_dir, fname)
+        with open(path, 'r') as f:
             vals = [float(line.strip()) for line in f if line.strip()]
             metrics.append(vals)
     return metrics
@@ -43,15 +45,16 @@ def main():
     parser.add_argument('--data-dir', dest='data_root', required=True,
                         help='Root data folder with subfolders for each metric.')
     # metric selection flags
-    parser.add_argument('--all',                       action='store_true', help='Select all metrics.')
-    parser.add_argument('--density',                   action='store_true', help='Plot density distribution and error bars.')
-    parser.add_argument('--average_safety_distance',   action='store_true', help='Plot average safety distance vs density.')
-    parser.add_argument('--min_safety_distance',       action='store_true', help='Plot minimum safety distance vs density.')
-    parser.add_argument('--translational_velocity',    action='store_true', help='Plot average translational velocity vs density.')
-    parser.add_argument('--path_length',               action='store_true', help='Plot total path length vs density.')
-    parser.add_argument('--efficiency',                action='store_true', help='Plot normalized path efficiency vs density.')
-    parser.add_argument('--time_not_moving',           action='store_true', help='Plot total time not moving vs density.')
-    parser.add_argument('--travel_time',               action='store_true', help='Plot total travel time vs density.')
+    parser.add_argument('--all',                     action='store_true', help='Select all metrics.')
+    parser.add_argument('--density',                 action='store_true', help='Plot density distribution and error bars.')
+    parser.add_argument('--average_safety_distance', action='store_true', help='Plot average safety distance vs density.')
+    parser.add_argument('--min_safety_distance',     action='store_true', help='Plot minimum safety distance vs density.')
+    parser.add_argument('--translational_velocity',  action='store_true', help='Plot average translational velocity vs density.')
+    parser.add_argument('--path_length',             action='store_true', help='Plot total path length vs density.')
+    parser.add_argument('--efficiency',              action='store_true', help='Plot normalized path efficiency vs density.')
+    parser.add_argument('--time_not_moving',         action='store_true', help='Plot total time not moving vs density.')
+    parser.add_argument('--travel_time',             action='store_true', help='Plot total travel time vs density.')
+    parser.add_argument('--write_to_yaml',           action='store_true', help='Write YAML files for binned metrics.')
     args = parser.parse_args()
 
     # if --all, enable all metrics
@@ -65,16 +68,21 @@ def main():
         parser.error('No metric specified; use --all or at least one metric flag.')
 
     data_root = args.data_root
+    # create YAML output folder if needed
+    yaml_dir = os.path.join(data_root, 'yaml_files')
+    if args.write_to_yaml:
+        os.makedirs(yaml_dir, exist_ok=True)
+
     # define metric directories
     dirs = {
-        'density':        os.path.join(data_root, 'density'),
-        'safety':         os.path.join(data_root, 'safety_distances'),
-        'trans_vel':      os.path.join(data_root, 'translational_velocity'),
-        'path_len':       os.path.join(data_root, 'path_length'),
-        'travel_time':    os.path.join(data_root, 'travel_time'),
-        'stop_time':      os.path.join(data_root, 'time_not_moving')
+        'density':     os.path.join(data_root, 'density'),
+        'safety':      os.path.join(data_root, 'safety_distances'),
+        'trans_vel':   os.path.join(data_root, 'translational_velocity'),
+        'path_len':    os.path.join(data_root, 'path_length'),
+        'travel_time': os.path.join(data_root, 'travel_time'),
+        'stop_time':   os.path.join(data_root, 'time_not_moving')
     }
-    # load density
+    # load density metrics
     density_metrics = load_metric(dirs['density'], 'density_trial_')
     density_means, density_stds = compute_stats(density_metrics)
     # density plots
@@ -120,13 +128,13 @@ def main():
     tt_totals      = np.array([np.sum(m)  for m in tt_metrics])
 
     metrics_map = {
-        'average_safety_distance': (safety_means, 'Avg Safety Distance (m)',        'Average Safety Distance'),
-        'min_safety_distance':     (safety_mins,  'Min Safety Distance (m)',        'Minimum Safety Distance'),
+        'average_safety_distance': (safety_means, 'Avg Safety Distance (m)', 'Average Safety Distance'),
+        'min_safety_distance':     (safety_mins,  'Min Safety Distance (m)',     'Minimum Safety Distance'),
         'translational_velocity':  (tv_means,     'Avg Translational Velocity (m/s)', 'Avg Translational Velocity'),
-        'path_length':             (pl_totals,    'Total Path Length (m)',          'Total Path Length'),
-        'efficiency':              (efficiencies,'Normalized Efficiency (10m/path_length)','Normalized Efficiency'),
-        'time_not_moving':         (tn_totals,    'Total Time Not Moving (s)',      'Time Not Moving'),
-        'travel_time':             (tt_totals,    'Total Travel Time (s)',          'Travel Time')
+        'path_length':             (pl_totals,    'Total Path Length (m)',       'Total Path Length'),
+        'efficiency':              (efficiencies, 'Normalized Efficiency (10m/path_length)', 'Normalized Efficiency'),
+        'time_not_moving':         (tn_totals,    'Total Time Not Moving (s)',   'Time Not Moving'),
+        'travel_time':             (tt_totals,    'Total Travel Time (s)',       'Travel Time')
     }
     bin_width = 0.05
     xlim_low, xlim_high = 0, density_means.max()*1.05
@@ -138,7 +146,7 @@ def main():
                 plt.scatter(density_means, values, s=50, edgecolor='black', label='Data')
             else:
                 edges = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
-                centers, m_means, m_cis = [], [], []
+                centers, m_means, m_stds, m_ns, m_cis = [], [], [], [], []
                 for i in range(len(edges)-1):
                     mask = (density_means >= edges[i]) & (density_means < edges[i+1])
                     if np.any(mask):
@@ -149,16 +157,37 @@ def main():
                         ci95  = 1.96 * sigma / np.sqrt(n)
                         centers.append((edges[i]+edges[i+1])/2)
                         m_means.append(mu)
+                        m_stds.append(sigma)
+                        m_ns.append(n)
                         m_cis.append(ci95)
                 centers = np.array(centers)
                 m_means = np.array(m_means)
+                m_stds  = np.array(m_stds)
+                m_ns    = np.array(m_ns)
                 m_cis   = np.array(m_cis)
                 plt.errorbar(centers, m_means, yerr=m_cis, fmt='-o', capsize=5, label='Mean ± 95% CI')
-                # linear fit on the binned means
                 slope, intercept, r_value, p_value, _ = linregress(centers, m_means)
                 fit_line = slope * centers + intercept
-                plt.plot(centers, fit_line, 'r--', label=f'Fit: y={slope:.3f}x+{intercept:.3f}\n' +
-                         f'r={r_value:.3f}, p={p_value:.3f}')
+                plt.plot(centers, fit_line, 'r--',
+                         label=f'y={slope:.3f}x+{intercept:.3f}, r={r_value:.3f}, p={p_value:.3f}')
+                if args.write_to_yaml:
+                    yaml_dict = {
+                        'site': 'Arcade',
+                        'state': 'ORCA',
+                        'baseline': 'BRNE',
+                        'metric': name,
+                        'mean': [float(f'{x:.4f}') for x in m_means],
+                        'std':  [float(f'{x:.4f}') for x in m_stds],
+                        'N':    [int(x) for x in m_ns],
+                        'bin':  [float(f'{x:.4f}') for x in centers]
+                    }
+                    yaml_file = os.path.join(
+                        yaml_dir,
+                        f"sim_arcade_BRNE_ORCA_{flag}.yaml"
+                    )
+                    with open(yaml_file, 'w') as yf:
+                        yaml.safe_dump(yaml_dict, yf, default_flow_style=True)
+                    print(f"Saved YAML for {name} → {yaml_file}")
             plt.xlabel('Mean Density (ped/m²)')
             plt.ylabel(ylabel)
             title = f'{name} vs Density'
