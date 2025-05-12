@@ -121,11 +121,6 @@ def run_sim(env_conf, sim_conf, gui=False):
     start = np.array(R['start'])
     goal  = np.array(R['goal'])
 
-    # out_dir     = 'density'
-    # os.makedirs(out_dir, exist_ok=True)
-    # safety_dir  = 'safety_distances'
-    # os.makedirs(safety_dir, exist_ok=True)
-        # output folders (we run inside /data/)
     out_dir            = 'density'
     os.makedirs(out_dir, exist_ok=True)
     safety_dir         = 'safety_distances'
