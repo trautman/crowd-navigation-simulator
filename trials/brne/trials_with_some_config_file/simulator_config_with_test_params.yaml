@@ -1,7 +1,7 @@
 # ─── Simulation‐level parameters ────────────────────────────────
 simulation:
   duration:         240.0      # seconds to run the whole sim
-  robot_delay:       30.0      # seconds before robot starts moving
+  robot_delay:       5.0      # seconds before robot starts moving
   goal_tolerance:    1.5      # m from goal considered "arrived"
   fov_deg:         104.0      # field‐of‐view in degrees
   fov_range:        2.0 #3.5       # FOV distance in meters
@@ -36,9 +36,9 @@ dwa:
   # heading_weight:   0.2
   # distance_weight:  0.3  #lower more aggressive; high enough crippled
   # velocity_weight:  0.01
-  heading_weight:   0.6    # up from 0.2
+  heading_weight:   0.15    # up from 0.2
   distance_weight:  0.3    # keep this to still avoid collisions
-  velocity_weight:  0.2    # up from 0.01
+  velocity_weight:  1.0    # HEAVILY WEIGHT VELOCITY TO GET FORWARD MOVEMENT
 
   robot_radius:    0.5   # matches ORCA agent_radius
   agent_radius:    0.5 
@@ -50,7 +50,7 @@ brne:
   v_samples:           14
   w_samples:           14
   num_samples:        196
-  nominal_vel:          0.4
+  nominal_vel:          0.6
 
   gp:
     tsteps:             25
@@ -104,7 +104,7 @@ orca:
   max_neighbors:     10        # how many neighbors to consider
   time_horizon:      2.0     # planning horizon for agents
   time_horizon_obst: 1.5       # horizon for obstacles
-  agent_radius:      0.5       # each agent’s collision radius
+  agent_radius:      0.4       # each agent’s collision radius
 
 
 

@@ -319,7 +319,7 @@ def run_sim(env_conf, sim_conf, gui=False):
                 dist = math.hypot(dx, dy)
                 dist_traveled.append(dist)
                 prev_pos = cur_pos
-                if abs(v) < 1e-8 and abs(w) < 1e-8 and t == robot_delay:
+                if abs(v) < 1e-3 and abs(w) < 1e-3:
                     time_not_moving_list.append(dt)
                 else:
                     time_not_moving_list.append(0.0)
@@ -328,71 +328,107 @@ def run_sim(env_conf, sim_conf, gui=False):
                 if any(p['dist']<=close_th for p in vis):
                     v,w = 0.0,0.0
                 else:
-                    if algo=='DWA':
-                        obs = [sim.getAgentPosition(a['id']) for a in ped_agents]
+                    ped_list_ctrl = [
+                        {'id': a['id'],
+                         'pos': sim.getAgentPosition(a['id']),
+                         'goal': a['goal']}
+                        for a in ped_agents
+                    ] 
+
+                    # 2) FOV filter (shared)
+                    rx, ry, rth = rstate[:3]
+                    ped_list_fov = []
+                    for p in ped_list_ctrl:
+                        dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
+                        dist    = math.hypot(dx, dy)
+                        ang     = math.degrees(math.atan2(dy, dx) - rth)
+                        rel     = (ang + 180) % 360 - 180
+                        if dist <= FOV_R and abs(rel) <= FOV_DEG/2:
+                            ped_list_fov.append(p)
+
+                    if algo == 'DWA':
+                        obs = [p['pos'] for p in ped_list_fov]
                         robot_ctl.cfg['current_v'] = rstate[3]
-                        v,w = robot_ctl.control(rstate, goal, obs)
-                        # ── visualize DWA plan ───────────────────
-                        if ENABLE_DWA_VIZ:
-                            # a) compute candidate trajectories
-                            vmin, vmax, wmin, wmax = robot_ctl.calc_dynamic_window(rstate)
-                            vs = np.linspace(vmin, vmax, robot_ctl.cfg['v_samples'])
-                            ws = np.linspace(wmin, wmax, robot_ctl.cfg['w_samples'])
-                            trajs = []
-                            for v_i in vs:
-                                for w_i in ws:
-                                    trajs.append(robot_ctl.predict_trajectory(rstate, v_i, w_i))
-                            # b) update candidate collection
-                            dwa_cands.set_segments(trajs)
-
-                            # c) update best-path line
-                            best_traj = robot_ctl.predict_trajectory(rstate, v, w)
-                            xs, ys = zip(*best_traj)
-                            dwa_best_line.set_data(xs, ys)
-
-                            # d) efficient redraw
-                            fig.canvas.draw_idle()
-                            plt.pause(VIZ_PAUSE)
-
-                    else:  # BRNE branch
-                        # 1) build ped_list_ctrl (all agents)
-                        ped_list_ctrl = [
-                            {'pos': sim.getAgentPosition(a['id']), 'goal': a['goal']}
-                            for a in ped_agents
-                        ]
-                        # 1a) compute FOV-filtered list for control
-                        rx, ry, rth = rstate[:3]
-                        ped_list_fov = []
-                        for p in ped_list_ctrl:
-                            dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
-                            dist    = math.hypot(dx, dy)
-                            ang     = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
-                            if dist <= FOV_R and abs(ang) <= FOV_DEG/2:
-                                ped_list_fov.append(p)
-                        # 2) control call (state, ped_list, goal)
+                        v, w = robot_ctl.control(rstate, goal, obs)
+                    else:
+                            # note: BRNEController expects dicts with 'pos' and 'goal'
                         t0 = time.perf_counter()
-                        # v, w = robot_ctl.control(rstate, goal, ped_list_ctrl)
                         v, w = robot_ctl.control(rstate, goal, ped_list_fov)
                         t1 = time.perf_counter()
+                        # you can log (t1-t0) if you like
 
-                        # 3) clip velocities & apply to ORCA
+                        # clip & apply
                         v = np.clip(v, -max_spd, max_spd)
                         w = np.clip(w, -max_yaw, max_yaw)
-                        sim.setAgentPrefVelocity(rid, (v * math.cos(rstate[2]), v * math.sin(rstate[2])))
+                        sim.setAgentPrefVelocity(
+                            rid,
+                            (v * math.cos(rstate[2]), v * math.sin(rstate[2]))
+                        )                  
+                    # if algo=='DWA':
+                    #     obs = [sim.getAgentPosition(a['id']) for a in ped_agents]
+                    #     robot_ctl.cfg['current_v'] = rstate[3]
+                    #     v,w = robot_ctl.control(rstate, goal, obs)
+                    #     # ── visualize DWA plan ───────────────────
+                    #     if ENABLE_DWA_VIZ:
+                    #         # a) compute candidate trajectories
+                    #         vmin, vmax, wmin, wmax = robot_ctl.calc_dynamic_window(rstate)
+                    #         vs = np.linspace(vmin, vmax, robot_ctl.cfg['v_samples'])
+                    #         ws = np.linspace(wmin, wmax, robot_ctl.cfg['w_samples'])
+                    #         trajs = []
+                    #         for v_i in vs:
+                    #             for w_i in ws:
+                    #                 trajs.append(robot_ctl.predict_trajectory(rstate, v_i, w_i))
+                    #         # b) update candidate collection
+                    #         dwa_cands.set_segments(trajs)
 
-                        # 4) overlay visualization in the main axes
-                        if ENABLE_BRNE_VIZ:
-                            # 1) FOV filtering
-                            rx, ry, rth = rstate[:3]
-                            fov_indices = []
-                            for i, p in enumerate(ped_list_ctrl):
-                                dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
-                                dist    = math.hypot(dx, dy)
-                                angle   = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
-                                if dist <= FOV_R and abs(angle) <= FOV_DEG/2:
-                                    fov_indices.append(i)
+                    #         # c) update best-path line
+                    #         best_traj = robot_ctl.predict_trajectory(rstate, v, w)
+                    #         xs, ys = zip(*best_traj)
+                    #         dwa_best_line.set_data(xs, ys)
 
-                            # # ── update GP samples ──
+                    #         # d) efficient redraw
+                    #         fig.canvas.draw_idle()
+                    #         plt.pause(VIZ_PAUSE)
+
+                    # else:  # BRNE branch
+                    #     # 1) build ped_list_ctrl (all agents)
+                    #     ped_list_ctrl = [
+                    #         {'pos': sim.getAgentPosition(a['id']), 'goal': a['goal']}
+                    #         for a in ped_agents
+                    #     ]
+                    #     # 1a) compute FOV-filtered list for control
+                    #     rx, ry, rth = rstate[:3]
+                    #     ped_list_fov = []
+                    #     for p in ped_list_ctrl:
+                    #         dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
+                    #         dist    = math.hypot(dx, dy)
+                    #         ang     = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
+                    #         if dist <= FOV_R and abs(ang) <= FOV_DEG/2:
+                    #             ped_list_fov.append(p)
+                    #     # 2) control call (state, ped_list, goal)
+                    #     t0 = time.perf_counter()
+                    #     # v, w = robot_ctl.control(rstate, goal, ped_list_ctrl)
+                    #     v, w = robot_ctl.control(rstate, goal, ped_list_fov)
+                    #     t1 = time.perf_counter()
+
+                    #     # 3) clip velocities & apply to ORCA
+                    #     v = np.clip(v, -max_spd, max_spd)
+                    #     w = np.clip(w, -max_yaw, max_yaw)
+                    #     sim.setAgentPrefVelocity(rid, (v * math.cos(rstate[2]), v * math.sin(rstate[2])))
+
+                        # # 4) overlay visualization in the main axes
+                        # if ENABLE_BRNE_VIZ:
+                        #     # 1) FOV filtering
+                        #     rx, ry, rth = rstate[:3]
+                        #     fov_indices = []
+                        #     for i, p in enumerate(ped_list_ctrl):
+                        #         dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
+                        #         dist    = math.hypot(dx, dy)
+                        #         angle   = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
+                        #         if dist <= FOV_R and abs(angle) <= FOV_DEG/2:
+                        #             fov_indices.append(i)
+
+                        #     # # ── update GP samples ──
                             # segments = []
                             # #  a) robot’s own GP samples
                             # for traj in robot_ctl.last_robot_samples:
@@ -405,29 +441,29 @@ def run_sim(env_conf, sim_conf, gui=False):
 
                             # ne_collection.set_segments(robot_ctl.last_ped_trajs)
 
-                            rx, ry, rth = rstate[:3]
-                            fov_indices = []
-                            for i, p in enumerate(ped_list_ctrl):
-                                dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
-                                dist    = math.hypot(dx, dy)
-                                ang     = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
-                                if dist <= FOV_R and abs(ang) <= FOV_DEG/2:
-                                    fov_indices.append(i)
+                            # rx, ry, rth = rstate[:3]
+                            # fov_indices = []
+                            # for i, p in enumerate(ped_list_ctrl):
+                            #     dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
+                            #     dist    = math.hypot(dx, dy)
+                            #     ang     = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
+                            #     if dist <= FOV_R and abs(ang) <= FOV_DEG/2:
+                            #         fov_indices.append(i)
 
-                            # ── filter NE list to FOV only ───────────────────────────────────
-                            valid_ne = [
-                                robot_ctl.last_ped_trajs[i]
-                                for i in fov_indices
-                                if i < len(robot_ctl.last_ped_trajs)
-                            ]
-                            ne_collection.set_segments(valid_ne)
+                            # # ── filter NE list to FOV only ───────────────────────────────────
+                            # valid_ne = [
+                            #     robot_ctl.last_ped_trajs[i]
+                            #     for i in fov_indices
+                            #     if i < len(robot_ctl.last_ped_trajs)
+                            # ]
+                            # ne_collection.set_segments(valid_ne)
 
-                            # 4) Efficient redraw
-                            fig.canvas.draw_idle()
-                            # t2 = time.perf_counter()
-                            # print(f"Frame {frame_count:4d} → control={t1-t0:.3f}s, "
-                            #                 f"viz={t2-t1:.3f}s, total={t2-t0:.3f}s")
-                            plt.pause(VIZ_PAUSE)
+                            # # 4) Efficient redraw
+                            # fig.canvas.draw_idle()
+                            # # t2 = time.perf_counter()
+                            # # print(f"Frame {frame_count:4d} → control={t1-t0:.3f}s, "
+                            # #                 f"viz={t2-t1:.3f}s, total={t2-t0:.3f}s")
+                            # plt.pause(VIZ_PAUSE)
                 v = np.clip(v,-max_spd,max_spd)
                 w = np.clip(w,-max_yaw,max_yaw)
                 sim.setAgentPrefVelocity(rid, (v*math.cos(th), v*math.sin(th)))

@@ -19,7 +19,7 @@ simulation:
 
 # ─── Robot start, goal & algorithm choice ───────────────────────
 robot:
-  algorithm: DWA       # either "BRNE" or "DWA"
+  algorithm: BRNE       # either "BRNE" or "DWA"
   start:     [5.0, -5.0]
   goal:      [5.0,  6.5]
 
@@ -50,7 +50,7 @@ brne:
   v_samples:           14
   w_samples:           14
   num_samples:        196
-  nominal_vel:          0.4
+  nominal_vel:          0.6
 
   gp:
     tsteps:             25
