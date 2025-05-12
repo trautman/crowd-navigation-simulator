@@ -1,14 +1,14 @@
 # ─── Simulation‐level parameters ────────────────────────────────
 simulation:
   duration:         240.0      # seconds to run the whole sim
-  robot_delay:       5.0      # seconds before robot starts moving
+  robot_delay:       30.0      # seconds before robot starts moving
   goal_tolerance:    1.5      # m from goal considered "arrived"
   fov_deg:         104.0      # field‐of‐view in degrees
   fov_range:        2.0 #3.5       # FOV distance in meters
   ne_predict_dist:  2.0       # how far (m) to draw the NE rollout
   close_stop_threshold:   0.5      # safety stop if any ped in FOV is closer than this (m)
   agent_speed:            1.5
-  n_trials:               25
+  n_trials:               100
   # how often to print a progress update (in simulation seconds)
   report_interval: 30.0
 # ─── PLAN VISUALIZATION ───────────────────────
@@ -80,7 +80,7 @@ ped_spawners:
   - {}
   - {}
 spawn_rate_min: 1.0    # (Hz) slowest spawning
-spawn_rate_max: 4.0    # (Hz) fastest spawning
+spawn_rate_max: 6.0    # (Hz) fastest spawning
 
 # spawn_mode: fixed
 # ped_spawners:

@@ -78,14 +78,61 @@ def main():
     # load density
     density_metrics = load_metric(dirs['density'], 'density_trial_')
     density_means, density_stds = compute_stats(density_metrics)
+    # if args.density:
+    #     # density histogram + errorbar
+    #     bin_width = 0.05
+    #     bins = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
+    #     fig, axes = plt.subplots(1,2,figsize=(12,5))
+    #     # histogram
+    #     counts, edges, patches = axes[0].hist(density_means, bins=bins,
+    #                                           edgecolor='black', alpha=0.7)
+    #     axes[0].set_xlim(0, density_means.max()*1.05)
+    #     axes[0].set_ylim(0, counts.max()*1.15)
+    #     axes[0].set_xlabel('Mean Density (ped/m²)')
+    #     axes[0].set_ylabel('Number of Trials')
+    #     axes[0].set_title('Density Distribution')
+    #     # errorbar per trial
+    #     idx = np.argsort(density_means)
+    #     axes[1].errorbar(np.arange(1,len(density_means)+1), density_means[idx],
+    #                      yerr=density_stds[idx], fmt='-o', ecolor='gray', capsize=5)
+    #     axes[1].set_xlim(0,len(density_means)+1)
+    #     axes[1].set_ylim(0, density_means.max()*1.05)
+    #     axes[1].set_xlabel('Trial (sorted)')
+    #     axes[1].set_ylabel('Mean Density (ped/m²)')
+    #     axes[1].set_title('Density Mean ± Std')
+    #     plt.tight_layout(); plt.show()
+
+
     if args.density:
         # density histogram + errorbar
         bin_width = 0.05
         bins = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
         fig, axes = plt.subplots(1,2,figsize=(12,5))
         # histogram
-        counts, edges, patches = axes[0].hist(density_means, bins=bins,
-                                              edgecolor='black', alpha=0.7)
+        counts, edges, patches = axes[0].hist(
+            density_means, bins=bins,
+            edgecolor='black', alpha=0.7
+        )
+        # annotate each bin with count (below) and percent (above)
+        num_trials = len(density_means)
+        max_count = counts.max()
+        offset = max_count * 0.02
+        for count, patch in zip(counts, patches):
+            if count > 0:
+                x = patch.get_x() + patch.get_width() / 2
+                pct = (count / num_trials) * 100
+                # percent above bar
+                axes[0].text(
+                    x, count + offset,
+                    f"{pct:.0f}%",
+                    ha='center', va='bottom', fontsize=10
+                )
+                # count just below top of bar
+                axes[0].text(
+                    x, count - offset,
+                    f"{int(count)}",
+                    ha='center', va='top', fontsize=10
+                )
         axes[0].set_xlim(0, density_means.max()*1.05)
         axes[0].set_ylim(0, counts.max()*1.15)
         axes[0].set_xlabel('Mean Density (ped/m²)')
@@ -101,6 +148,8 @@ def main():
         axes[1].set_ylabel('Mean Density (ped/m²)')
         axes[1].set_title('Density Mean ± Std')
         plt.tight_layout(); plt.show()
+
+    
 
     # prepare other metric arrays
     safety_metrics = load_metric(dirs['safety'], 'safety_distances_trial_')
