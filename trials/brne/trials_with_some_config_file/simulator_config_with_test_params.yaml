@@ -8,7 +8,7 @@ simulation:
   ne_predict_dist:  2.0       # how far (m) to draw the NE rollout
   close_stop_threshold:   0.5      # safety stop if any ped in FOV is closer than this (m)
   agent_speed:            1.5
-  n_trials:               100
+  n_trials:               900
   # how often to print a progress update (in simulation seconds)
   report_interval: 30.0
 # ─── PLAN VISUALIZATION ───────────────────────
@@ -78,8 +78,9 @@ ped_spawners:
   - {}
   - {}
   - {}
-  - {}
-spawn_rate_min: 1.0    # (Hz) slowest spawning
+  - {} #6 total,
+  - {} 
+spawn_rate_min: 1.5    # (Hz) slowest spawning
 spawn_rate_max: 6.0    # (Hz) fastest spawning
 
 # spawn_mode: fixed
