@@ -358,107 +358,8 @@ def run_sim(env_conf, sim_conf, gui=False):
                         sim.setAgentPrefVelocity(
                             rid,
                             (v * math.cos(rstate[2]), v * math.sin(rstate[2]))
-                        )                  
-                    # if algo=='DWA':
-                    #     obs = [sim.getAgentPosition(a['id']) for a in ped_agents]
-                    #     robot_ctl.cfg['current_v'] = rstate[3]
-                    #     v,w = robot_ctl.control(rstate, goal, obs)
-                    #     # ── visualize DWA plan ───────────────────
-                    #     if ENABLE_DWA_VIZ:
-                    #         # a) compute candidate trajectories
-                    #         vmin, vmax, wmin, wmax = robot_ctl.calc_dynamic_window(rstate)
-                    #         vs = np.linspace(vmin, vmax, robot_ctl.cfg['v_samples'])
-                    #         ws = np.linspace(wmin, wmax, robot_ctl.cfg['w_samples'])
-                    #         trajs = []
-                    #         for v_i in vs:
-                    #             for w_i in ws:
-                    #                 trajs.append(robot_ctl.predict_trajectory(rstate, v_i, w_i))
-                    #         # b) update candidate collection
-                    #         dwa_cands.set_segments(trajs)
+                        )  
 
-                    #         # c) update best-path line
-                    #         best_traj = robot_ctl.predict_trajectory(rstate, v, w)
-                    #         xs, ys = zip(*best_traj)
-                    #         dwa_best_line.set_data(xs, ys)
-
-                    #         # d) efficient redraw
-                    #         fig.canvas.draw_idle()
-                    #         plt.pause(VIZ_PAUSE)
-
-                    # else:  # BRNE branch
-                    #     # 1) build ped_list_ctrl (all agents)
-                    #     ped_list_ctrl = [
-                    #         {'pos': sim.getAgentPosition(a['id']), 'goal': a['goal']}
-                    #         for a in ped_agents
-                    #     ]
-                    #     # 1a) compute FOV-filtered list for control
-                    #     rx, ry, rth = rstate[:3]
-                    #     ped_list_fov = []
-                    #     for p in ped_list_ctrl:
-                    #         dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
-                    #         dist    = math.hypot(dx, dy)
-                    #         ang     = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
-                    #         if dist <= FOV_R and abs(ang) <= FOV_DEG/2:
-                    #             ped_list_fov.append(p)
-                    #     # 2) control call (state, ped_list, goal)
-                    #     t0 = time.perf_counter()
-                    #     # v, w = robot_ctl.control(rstate, goal, ped_list_ctrl)
-                    #     v, w = robot_ctl.control(rstate, goal, ped_list_fov)
-                    #     t1 = time.perf_counter()
-
-                    #     # 3) clip velocities & apply to ORCA
-                    #     v = np.clip(v, -max_spd, max_spd)
-                    #     w = np.clip(w, -max_yaw, max_yaw)
-                    #     sim.setAgentPrefVelocity(rid, (v * math.cos(rstate[2]), v * math.sin(rstate[2])))
-
-                        # # 4) overlay visualization in the main axes
-                        # if ENABLE_BRNE_VIZ:
-                        #     # 1) FOV filtering
-                        #     rx, ry, rth = rstate[:3]
-                        #     fov_indices = []
-                        #     for i, p in enumerate(ped_list_ctrl):
-                        #         dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
-                        #         dist    = math.hypot(dx, dy)
-                        #         angle   = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
-                        #         if dist <= FOV_R and abs(angle) <= FOV_DEG/2:
-                        #             fov_indices.append(i)
-
-                        #     # # ── update GP samples ──
-                            # segments = []
-                            # #  a) robot’s own GP samples
-                            # for traj in robot_ctl.last_robot_samples:
-                            #     segments.append(traj)
-
-                            # #  b) pedestrian GP samples (already FOV‐filtered), max 10 each
-                            # for p_samples in robot_ctl.last_ped_samples:
-                            #     segments.extend(p_samples[:10])
-                            # gp_collection.set_segments(segments)
-
-                            # ne_collection.set_segments(robot_ctl.last_ped_trajs)
-
-                            # rx, ry, rth = rstate[:3]
-                            # fov_indices = []
-                            # for i, p in enumerate(ped_list_ctrl):
-                            #     dx, dy = p['pos'][0] - rx, p['pos'][1] - ry
-                            #     dist    = math.hypot(dx, dy)
-                            #     ang     = (math.degrees(math.atan2(dy, dx) - rth) + 180) % 360 - 180
-                            #     if dist <= FOV_R and abs(ang) <= FOV_DEG/2:
-                            #         fov_indices.append(i)
-
-                            # # ── filter NE list to FOV only ───────────────────────────────────
-                            # valid_ne = [
-                            #     robot_ctl.last_ped_trajs[i]
-                            #     for i in fov_indices
-                            #     if i < len(robot_ctl.last_ped_trajs)
-                            # ]
-                            # ne_collection.set_segments(valid_ne)
-
-                            # # 4) Efficient redraw
-                            # fig.canvas.draw_idle()
-                            # # t2 = time.perf_counter()
-                            # # print(f"Frame {frame_count:4d} → control={t1-t0:.3f}s, "
-                            # #                 f"viz={t2-t1:.3f}s, total={t2-t0:.3f}s")
-                            # plt.pause(VIZ_PAUSE)
                 v = np.clip(v,-max_spd,max_spd)
                 w = np.clip(w,-max_yaw,max_yaw)
                 sim.setAgentPrefVelocity(rid, (v*math.cos(th), v*math.sin(th)))
@@ -489,11 +390,7 @@ def run_sim(env_conf, sim_conf, gui=False):
             # GUI update
             if gui:
 
-                # pts = np.array([sim.getAgentPosition(a['id'])
-                #                 for a in ped_agents])
-                # if pts.size>0:
-                #     scatter.set_offsets(pts)
-                 # build positions + per-agent colors based on FOV
+                # build positions + per-agent colors based on FOV
                 pts = [sim.getAgentPosition(a['id']) for a in ped_agents]
                 colors = []
                 rx, ry, rth = rstate[:3]
@@ -509,13 +406,29 @@ def run_sim(env_conf, sim_conf, gui=False):
                 if pts:
                     scatter.set_offsets(pts)
                     scatter.set_color(colors)
-                tr = Affine2D().rotate_deg_around(0,0,
-                     math.degrees(rstate[2])).translate(rstate[0],rstate[1])
-                robot_patch.set_transform(tr+ax.transData)
-                wedge.set_center((rstate[0],rstate[1]))
-                wedge.theta1 = math.degrees(rstate[2]) - FOV_DEG/2
-                wedge.theta2 = math.degrees(rstate[2]) + FOV_DEG/2
+
+                # update robot orientation & position
+                tr = Affine2D().rotate_deg_around(
+                    0, 0, math.degrees(rstate[2])
+                ).translate(rstate[0], rstate[1])
+                robot_patch.set_transform(tr + ax.transData)
+
+                # always update wedge center
+                wedge.set_center((rstate[0], rstate[1]))
+
+                # compute raw angles
+                th_deg = math.degrees(rstate[2])
+                theta1 = th_deg - FOV_DEG/2    # <<< unchanged, just compute
+                theta2 = th_deg + FOV_DEG/2    # <<< unchanged, just compute
+
+                # only update the wedge angles (no other code here!) if valid
+                if not math.isnan(theta1) and not math.isnan(theta2):
+                    wedge.theta1 = theta1      # <<< guarded
+                    wedge.theta2 = theta2      # <<< guarded
+
                 plt.pause(TIME_STEP)
+
+
 
             # prune
             ped_agents = [a for a in ped_agents
