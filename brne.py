@@ -143,14 +143,44 @@ def brne_nav(xtraj_samples, ytraj_samples, num_agents, tsteps, num_pts, cost_a1,
 
     all_costs = costs_nb(xtraj_samples, ytraj_samples, num_agents, num_pts, tsteps, cost_a1, cost_a2, cost_a3)
 
-    # coll_mask = coll_beck(ytraj_samples[0:num_pts], y_min, y_max).all(axis=1).astype(float)
+    coll_mask = coll_beck(ytraj_samples[0:num_pts], y_min, y_max).all(axis=1).astype(float)
 
     for iter_num in range(11):
         weights = weights_update_nb(all_costs, weights, index_table, all_pt_index, num_agents, num_pts)
 
-    # agent_weights = weights[0] * coll_mask
-    # agent_weights /= np.mean(agent_weights)
-    # weights[0] = agent_weights.copy()
+    # —— enforce lateral corridor on the robot’s x‐trajectories ——
+    # the first num_pts rows of xtraj_samples are the robot’s rollouts
+    robot_x_trajs = xtraj_samples[0:num_pts]                        # shape (num_pts, tsteps)
+
+    # build a mask: True only if every time‐step stays within [x_min, x_max]
+    coll_mask = coll_beck(robot_x_trajs, y_min, y_max).all(axis=1).astype(float)
+
+    # zero‐out any rollout that leaves the corridor
+    masked_weights = weights[0] * coll_mask
+    mean_w = masked_weights.mean()
+
+    if mean_w > 0.0:
+        # renormalize so the surviving rollouts still average to 1.0
+        masked_weights /= mean_w
+        weights[0] = masked_weights.copy()
+    # else: leave weights[0] untouched to avoid divide‐by‐zero/NaN
+ 
+    # # —— enforce lateral corridor on the robot’s x-trajs —— 
+    # # first num_pts rows of xtraj_samples are the robot’s candidates
+    # robot_x_trajs = xtraj_samples[0:num_pts]                   # shape (num_pts, tsteps)
+
+    # # mask is True only if the entire rollout stays within [x_min, x_max]
+    # per_step = coll_beck(robot_x_trajs, y_min, y_max)         # (num_pts, tsteps)
+    # coll_mask = per_step.all(axis=1).astype(float)            # (num_pts,)
+
+    # # zero out any rollout that leaves the corridor
+    # masked_weights = weights[0] * coll_mask
+    # mean_w = masked_weights.mean()
+
+    # if mean_w > 0.0:
+    #     masked_weights /= mean_w
+    #     weights[0] = masked_weights.copy()
+
 
     return weights
 
