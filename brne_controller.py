@@ -39,152 +39,96 @@ class BRNEController:
         # 4) reshape to (num_samples, horizon, 2) and return:
         return raw.reshape(num_samples, horizon, 2)
 
-
-
-
     def control(self, state, goal, ped_list):
+        # ── 0) remember robot’s start‐x for corridor bounds ─────────────
+        if not hasattr(self, 'x0'):
+            self.x0 = state[0]
+
         cfg    = self.cfg
         N      = cfg["num_samples"]
         tsteps = cfg["gp"]["tsteps"]
         dt     = self.dt
 
-        # ── OPEN-SPACE EARLY EXIT ───────────────────────────────
-        # If there are no pedestrians in FOV, build & optimize an
-        # ensemble around open_space_velocity and return immediately.
+        # ── 1) OPEN‐SPACE: no pedestrians → simple arc toward goal ─────
         if not ped_list:
             px, py, th = state[0], state[1], state[2]
             gx, gy     = goal
 
-            # compute turning‐radius axis
+            # compute yaw_os exactly like in ROS
             if th > 0.0:
                 theta_a = th - np.pi/2
             else:
                 theta_a = th + np.pi/2
             axis_vec  = np.array([np.cos(theta_a), np.sin(theta_a)])
-            vec2goal  = np.array([gx - px, gy - py])
+            vec2goal  = np.array([gx-px, gy-py])
             dist2goal = np.linalg.norm(vec2goal)
             denom     = vec2goal @ vec2goal or 1.0
             proj_len  = (axis_vec @ vec2goal) / denom * dist2goal
             radius    = 0.5 * dist2goal / proj_len if proj_len else np.inf
 
-            # fetch open-space speed & yaw
             v_os   = float(cfg.get('open_space_velocity', cfg['nominal_vel']))
             yaw_os = (-v_os/radius) if th > 0 else (v_os/radius)
 
-            # build & sample the ensemble
-            nominal_cmds = np.tile([v_os, yaw_os], (tsteps, 1))
-            u_ens = get_ulist_essemble(
-                nominal_cmds,
-                cfg['max_speed'],
-                cfg['max_yaw_rate'],
-                N
-            )
-
-            # simulate & optimize exactly as in your crowded branch
-            init_st     = np.tile(state[:3], (N,1)).T
-            robot_rolls = traj_sim_essemble(init_st, u_ens, dt)
-            # (assemble xtraj/ytraj, call brne_nav to get W, just like below)
-            xtraj = np.zeros((N, tsteps)); ytraj = np.zeros((N, tsteps))
-            xtraj[:] = robot_rolls[:,0,:].T
-            ytraj[:] = robot_rolls[:,1,:].T
-            W = brne_nav(
-                xtraj, ytraj,
-                1, tsteps, N,
-                cfg["gp"]["cost_a1"],
-                cfg["gp"]["cost_a2"],
-                cfg["gp"]["cost_a3"],
-                self.ped_sample_scale,
-                cfg.get("corridor_y_min"),
-                cfg.get("corridor_y_max"),
-            )
-
-            w0 = W[0, :]  
-            vs = u_ens[0, :, 0]  
-            ws = u_ens[0, :, 1]  
-            denom = w0.sum()
-            if denom == 0 or np.isnan(denom):  
-                # fallback to the straight‐to‐goal cmd
-                v = v_os
-                w = yaw_os
-            else:
-                v = float((w0 @ vs) / denom)
-                w = float((w0 @ ws) / denom)
-
-            # clip & return
-            v = np.clip(v, -cfg['max_speed'], cfg['max_speed'])
-            w = np.clip(w, -cfg['max_yaw_rate'], cfg['max_yaw_rate'])
+            # clip & return immediately
+            v = np.clip(v_os,   -cfg['max_speed'],   cfg['max_speed'])
+            w = np.clip(yaw_os, -cfg['max_yaw_rate'], cfg['max_yaw_rate'])
             return v, w
 
-            # # first‐step command
-            # w0 = W[0,:]
-            # vs = u_ens[0,:,0]
-            # ws = u_ens[0,:,1]
-            # v  = float(np.dot(w0, vs) / w0.sum())
-            # w  = float(np.dot(w0, ws) / w0.sum())
+        # ── 2) CROWDED‐SPACE: pedestrians in FOV ─────────────────────────
 
-            # # clip & return before any other code runs
-            # v = np.clip(v, -cfg['max_speed'], cfg['max_speed'])
-            # w = np.clip(w, -cfg['max_yaw_rate'], cfg['max_yaw_rate'])
-            # return v, w
-
-
-
-        # 1) Sample GPs
+        # 2.1) Sample GP rollouts
         robot_trajs, ped_trajs = self.sample_gps(state, ped_list, goal)
         self.last_robot_samples = robot_trajs
         self.last_ped_samples   = ped_trajs
         self.last_ped_trajs     = []
 
-        
-
-        # 2) Compute a smooth nominal control toward the goal (as in brne_nav_ros)  citeturn62file15
+        # 2.2) Build nominal turn‐toward‐goal ensemble (ut)
         px, py, th = state[0], state[1], state[2]
-        # build a perpendicular axis and project to get turning radius
         if th > 0.0:
             theta_a = th - np.pi/2
         else:
             theta_a = th + np.pi/2
-        axis_vec = np.array([np.cos(theta_a), np.sin(theta_a)])
-        vec2goal = np.array(goal) - np.array([px, py])
+        axis_vec  = np.array([np.cos(theta_a), np.sin(theta_a)])
+        vec2goal  = np.array(goal) - np.array([px, py])
         dist2goal = np.linalg.norm(vec2goal)
-        denom = vec2goal @ vec2goal if (vec2goal @ vec2goal) != 0 else 1.0
-        proj_len = (axis_vec @ vec2goal) / denom * dist2goal
-        radius = 0.5 * dist2goal / proj_len if proj_len != 0 else np.inf
+        denom     = vec2goal @ vec2goal or 1.0
+        proj_len  = (axis_vec @ vec2goal) / denom * dist2goal
+        radius    = 0.5 * dist2goal / proj_len if proj_len else np.inf
+
         nominal_vel = cfg["nominal_vel"]
         if th > 0.0:
             ut = np.array([nominal_vel, -nominal_vel / radius])
         else:
             ut = np.array([nominal_vel,  nominal_vel / radius])
-        nominal_cmds = np.tile(ut, (tsteps, 1))
         u_ens = get_ulist_essemble(
-            nominal_cmds,
+            np.tile(ut, (tsteps, 1)),
             cfg["max_speed"],
             cfg["max_yaw_rate"],
             N
         )
 
-        # 3) Simulate robot rollouts
-        init_st     = np.tile(state[:3], (N,1)).T    # (3, N)
-        robot_rolls = traj_sim_essemble(init_st, u_ens, self.dt)
-        # robot_rolls.shape == (tsteps, 3, N)
+        # 2.3) Simulate robot‐only rollouts → xtraj, ytraj
+        init_st     = np.tile(state[:3], (N,1)).T
+        robot_rolls = traj_sim_essemble(init_st, u_ens, dt)
+        xtraj_robot = robot_rolls[:, 0, :].T  # shape (N, tsteps)
+        ytraj_robot = robot_rolls[:, 1, :].T
 
-        # 4) Assemble joint trajectories
+        # 2.4) Assemble joint trajectories (robot + pedestrians)
         num_agents = 1 + len(ped_trajs)
         xtraj = np.zeros((num_agents * N, tsteps))
         ytraj = np.zeros((num_agents * N, tsteps))
-
-        # 4a) robot block
-        xtraj[0:N, :] = robot_rolls[:, 0, :].T  # (N, tsteps)
-        ytraj[0:N, :] = robot_rolls[:, 1, :].T
-
-        # 4b) pedestrian blocks
+        xtraj[0:N, :] = xtraj_robot
+        ytraj[0:N, :] = ytraj_robot
         for j, ped in enumerate(ped_trajs, start=1):
-            s, e = j * N, (j + 1) * N
-            # ped.shape == (N, tsteps, 2)
+            s, e = j*N, (j+1)*N
             xtraj[s:e, :] = ped[:, :, 0]
             ytraj[s:e, :] = ped[:, :, 1]
 
-        # 5) Run the BRNE optimizer
+        # 2.5) Compute absolute corridor bounds in world‐x
+        x_min = self.x0 + cfg["corridor_y_min"]
+        x_max = self.x0 + cfg["corridor_y_max"]
+
+        # 2.6) Call the NE optimizer with the correct num_agents
         W = brne_nav(
             xtraj, ytraj,
             num_agents, tsteps, N,
@@ -192,36 +136,287 @@ class BRNEController:
             cfg["gp"]["cost_a2"],
             cfg["gp"]["cost_a3"],
             self.ped_sample_scale,
-            cfg.get("corridor_y_min"),
-            cfg.get("corridor_y_max"),
+            x_min, x_max
         )
         self.last_W = W
 
-        # 6) Extract each pedestrian's NE trajectory
+        # 2.7) Extract each pedestrian’s NE for visualization
+        self.last_ped_trajs = []
         for pi in range(len(ped_trajs)):
-            s, e = (pi + 1) * N, (pi + 2) * N
-            rows = xtraj[s:e, :]  # shape (N, tsteps)
-            cols = ytraj[s:e, :]
+            s, e = (pi+1)*N, (pi+2)*N
+            w_i = W[0, s:e]
+            if w_i.sum() > 0:
+                rows = xtraj[s:e, :]
+                cols = ytraj[s:e, :]
+                x_ne = (w_i[:, None] * rows).sum(axis=0) / w_i.sum()
+                y_ne = (w_i[:, None] * cols).sum(axis=0) / w_i.sum()
+                self.last_ped_trajs.append(np.stack([x_ne, y_ne], axis=1))
 
-            w_i_raw = W[0, s:e]   # ideally length N
-            # ─── GUARD against bad weight length ───
-            if w_i_raw.shape[0] != N or w_i_raw.sum() == 0.0:
-                # skip this pedestrian if no valid weights
-                continue
-            w_i = w_i_raw
+        # 2.8) First‐step robot command from NE weights (with debug)
+        w0    = W[0, :N]
+        denom = w0.sum()
+        vs    = u_ens[:,0,0]  # u_ens has shape (tsteps, N, 2)
+        ws    = u_ens[:,0,1]  # but you want the first rollout step: use u_ens[0,:,*]
+        vs    = u_ens[0,:,0]
+        ws    = u_ens[0,:,1]
 
-            x_ne = (rows * w_i[:, None]).sum(axis=0) / w_i.sum()
-            y_ne = (cols * w_i[:, None]).sum(axis=0) / w_i.sum()
-            self.last_ped_trajs.append(np.stack([x_ne, y_ne], axis=1))
+        # print(f"[DEBUG] w0 sum = {denom}, any NaNs? {np.isnan(denom)}", flush=True)
 
-        # 7) First‐step robot command from NE weights
-        w0 = W[0, :N]
-        vs = u_ens[0, :, 0]
-        ws = u_ens[0, :, 1]
-        v  = float(np.dot(w0, vs) / w0.sum())
-        w  = float(np.dot(w0, ws) / w0.sum())
+        if denom > 0 and not np.isnan(denom):
+            v = float((w0 @ vs) / denom)
+            w = float((w0 @ ws) / denom)
+            # print(f"[DEBUG] used weighted NE, denom = {denom}", flush=True)
+        else:
+            v, w = ut
+            # print(f"[DEBUG] fallback to ut, denom = {denom}", flush=True)
 
+        # 2.9) Clip & return
+        v = np.clip(v, -cfg['max_speed'],   cfg['max_speed'])
+        w = np.clip(w, -cfg['max_yaw_rate'], cfg['max_yaw_rate'])
         return v, w
+
+
+
+    # def control(self, state, goal, ped_list):
+    #     # remember the very first x-position so we can build absolute corridor bounds
+    #     if not hasattr(self, 'x0'):
+    #         self.x0 = state[0]
+    #         print("state 0", state[0])
+
+    #     cfg    = self.cfg
+    #     N      = cfg["num_samples"]
+    #     tsteps = cfg["gp"]["tsteps"]
+    #     dt     = self.dt
+
+
+
+    #     if not ped_list:
+    #         # open-space: no pedestrians → straight-to-goal at open_space_velocity
+    #         px, py, th = state[0], state[1], state[2]
+    #         gx, gy     = goal
+
+    #         # compute yaw_os exactly like in ROS
+    #         if th > 0.0:
+    #             theta_a = th - np.pi/2
+    #         else:
+    #             theta_a = th + np.pi/2
+    #         axis_vec = np.array([np.cos(theta_a), np.sin(theta_a)])
+    #         vec2goal = np.array([gx-px, gy-py])
+    #         dist2goal = np.linalg.norm(vec2goal)
+    #         denom = vec2goal @ vec2goal or 1.0
+    #         proj_len = (axis_vec @ vec2goal) / denom * dist2goal
+    #         radius   = 0.5 * dist2goal / proj_len if proj_len else np.inf
+
+    #         v_os = float(cfg.get('open_space_velocity', cfg['nominal_vel']))
+    #         yaw_os = (-v_os/radius) if th>0 else (v_os/radius)
+
+    #         # clip & return immediately
+    #         return ( np.clip(v_os, -cfg['max_speed'],   cfg['max_speed']),
+    #                  np.clip(yaw_os, -cfg['max_yaw_rate'], cfg['max_yaw_rate']) )
+
+
+
+
+    #     # # ── OPEN-SPACE EARLY EXIT ───────────────────────────────
+    #     # # If there are no pedestrians in FOV, build & optimize an
+    #     # # ensemble around open_space_velocity and return immediately.
+    #     # if not ped_list:
+    #         # px, py, th = state[0], state[1], state[2]
+    #         # gx, gy     = goal
+
+    #         # # compute turning‐radius axis
+    #         # if th > 0.0:
+    #         #     theta_a = th - np.pi/2
+    #         # else:
+    #         #     theta_a = th + np.pi/2
+    #         # axis_vec  = np.array([np.cos(theta_a), np.sin(theta_a)])
+    #         # vec2goal  = np.array([gx - px, gy - py])
+    #         # dist2goal = np.linalg.norm(vec2goal)
+    #         # denom     = vec2goal @ vec2goal or 1.0
+    #         # proj_len  = (axis_vec @ vec2goal) / denom * dist2goal
+    #         # radius    = 0.5 * dist2goal / proj_len if proj_len else np.inf
+
+    #         # # fetch open-space speed & yaw
+    #         # v_os   = float(cfg.get('open_space_velocity', cfg['nominal_vel']))
+    #         # yaw_os = (-v_os/radius) if th > 0 else (v_os/radius)
+
+    #         # # build & sample the ensemble
+    #         # nominal_cmds = np.tile([v_os, yaw_os], (tsteps, 1))
+    #         # u_ens = get_ulist_essemble(
+    #         #     nominal_cmds,
+    #         #     cfg['max_speed'],
+    #         #     cfg['max_yaw_rate'],
+    #         #     N
+    #         # )
+
+    #         # # simulate & optimize exactly as in your crowded branch
+    #         # init_st     = np.tile(state[:3], (N,1)).T
+    #         # robot_rolls = traj_sim_essemble(init_st, u_ens, dt)
+    #         # # (assemble xtraj/ytraj, call brne_nav to get W, just like below)
+    #         # xtraj = np.zeros((N, tsteps)); ytraj = np.zeros((N, tsteps))
+    #         # xtraj[:] = robot_rolls[:,0,:].T
+    #         # ytraj[:] = robot_rolls[:,1,:].T
+            
+
+    #         #     # compute world-frame x-limits from the relative corridor settings
+    #         # x_min = self.x0 + cfg["corridor_y_min"]
+    #         # x_max = self.x0 + cfg["corridor_y_max"]
+
+    #         # W = brne_nav(
+    #         #     xtraj, ytraj,
+    #         #     1,          # still only the robot’s rollouts
+    #         #     tsteps, N,
+    #         #     cfg["gp"]["cost_a1"],
+    #         #     cfg["gp"]["cost_a2"],
+    #         #     cfg["gp"]["cost_a3"],
+    #         #     self.ped_sample_scale,
+    #         #     x_min,      # absolute left bound in map coords
+    #         #     x_max       # absolute right bound
+    #         # )
+
+
+    #         # # 7) First‐step command from NE weights
+    #         # w0    = W[0, :N]
+    #         # vs    = u_ens[0, :, 0]
+    #         # ws    = u_ens[0, :, 1]
+    #         # denom = w0.sum()
+
+    #         # # DEBUG: print *before* the branch so we always see the value
+    #         # print(f"[DEBUG] w0 sum = {denom},   any NaNs? {np.isnan(denom)}", flush=True)
+
+    #         # if denom > 0 and not np.isnan(denom):
+    #         #     v = float((w0 @ vs) / denom)
+    #         #     w = float((w0 @ ws) / denom)
+    #         #     print(f"[DEBUG] used weighted mean, denom = {denom}", flush=True)
+    #         # else:
+    #         #     # fallback
+    #         #     print(f"[DEBUG] fallback to open‐space cmd, denom = {denom}", flush=True)
+    #         #     v = v_os
+    #         #     w = yaw_os
+                
+
+    #         # # clip & return
+    #         # v = np.clip(v, -cfg['max_speed'],   cfg['max_speed'])
+    #         # w = np.clip(w, -cfg['max_yaw_rate'], cfg['max_yaw_rate'])
+    #         # return v, w
+
+
+
+
+    #     # 1) Sample GPs
+    #     robot_trajs, ped_trajs = self.sample_gps(state, ped_list, goal)
+    #     self.last_robot_samples = robot_trajs
+    #     self.last_ped_samples   = ped_trajs
+    #     self.last_ped_trajs     = []
+
+        
+
+    #     # 2) Compute a smooth nominal control toward the goal (as in brne_nav_ros)  citeturn62file15
+    #     px, py, th = state[0], state[1], state[2]
+    #     # build a perpendicular axis and project to get turning radius
+    #     if th > 0.0:
+    #         theta_a = th - np.pi/2
+    #     else:
+    #         theta_a = th + np.pi/2
+    #     axis_vec = np.array([np.cos(theta_a), np.sin(theta_a)])
+    #     vec2goal = np.array(goal) - np.array([px, py])
+    #     dist2goal = np.linalg.norm(vec2goal)
+    #     denom = vec2goal @ vec2goal if (vec2goal @ vec2goal) != 0 else 1.0
+    #     proj_len = (axis_vec @ vec2goal) / denom * dist2goal
+    #     radius = 0.5 * dist2goal / proj_len if proj_len != 0 else np.inf
+    #     nominal_vel = cfg["nominal_vel"]
+    #     if th > 0.0:
+    #         ut = np.array([nominal_vel, -nominal_vel / radius])
+    #     else:
+    #         ut = np.array([nominal_vel,  nominal_vel / radius])
+    #     nominal_cmds = np.tile(ut, (tsteps, 1))
+    #     u_ens = get_ulist_essemble(
+    #         nominal_cmds,
+    #         cfg["max_speed"],
+    #         cfg["max_yaw_rate"],
+    #         N
+    #     )
+
+    #     # 3) Simulate robot rollouts
+    #     init_st     = np.tile(state[:3], (N,1)).T    # (3, N)
+    #     robot_rolls = traj_sim_essemble(init_st, u_ens, self.dt)
+    #     # robot_rolls.shape == (tsteps, 3, N)
+
+    #     # 4) Assemble joint trajectories
+    #     num_agents = 1 + len(ped_trajs)
+    #     xtraj = np.zeros((num_agents * N, tsteps))
+    #     ytraj = np.zeros((num_agents * N, tsteps))
+
+    #     # 4a) robot block
+    #     xtraj[0:N, :] = robot_rolls[:, 0, :].T  # (N, tsteps)
+    #     ytraj[0:N, :] = robot_rolls[:, 1, :].T
+
+    #     # 4b) pedestrian blocks
+    #     for j, ped in enumerate(ped_trajs, start=1):
+    #         s, e = j * N, (j + 1) * N
+    #         # ped.shape == (N, tsteps, 2)
+    #         xtraj[s:e, :] = ped[:, :, 0]
+    #         ytraj[s:e, :] = ped[:, :, 1]
+
+    #     # 5) Run the BRNE optimizer
+    #     W = brne_nav(
+    #         xtraj, ytraj,
+    #         num_agents, tsteps, N,
+    #         cfg["gp"]["cost_a1"],
+    #         cfg["gp"]["cost_a2"],
+    #         cfg["gp"]["cost_a3"],
+    #         self.ped_sample_scale,
+    #         cfg.get("corridor_y_min"),
+    #         cfg.get("corridor_y_max"),
+    #     )
+    #     self.last_W = W
+
+    #     # 6) Extract each pedestrian's NE trajectory
+    #     for pi in range(len(ped_trajs)):
+    #         s, e = (pi + 1) * N, (pi + 2) * N
+    #         rows = xtraj[s:e, :]  # shape (N, tsteps)
+    #         cols = ytraj[s:e, :]
+
+    #         w_i_raw = W[0, s:e]   # ideally length N
+    #         # ─── GUARD against bad weight length ───
+    #         if w_i_raw.shape[0] != N or w_i_raw.sum() == 0.0:
+    #             # skip this pedestrian if no valid weights
+    #             continue
+    #         w_i = w_i_raw
+
+    #         x_ne = (rows * w_i[:, None]).sum(axis=0) / w_i.sum()
+    #         y_ne = (cols * w_i[:, None]).sum(axis=0) / w_i.sum()
+    #         self.last_ped_trajs.append(np.stack([x_ne, y_ne], axis=1))
+
+    #     # # 7) First‐step robot command from NE weights
+    #     # w0 = W[0, :N]
+    #     # vs = u_ens[0, :, 0]
+    #     # ws = u_ens[0, :, 1]
+    #     # v  = float(np.dot(w0, vs) / w0.sum())
+    #     # w  = float(np.dot(w0, ws) / w0.sum())
+
+    #     # 7) First‐step robot command from NE weights
+    #     w0    = W[0, :N]
+    #     vs    = u_ens[0, :, 0]
+    #     ws    = u_ens[0, :, 1]
+    #     denom = w0.sum()
+
+    #     # ── guard zero or NaN denominator ───────────────────────────
+    #     if denom > 0 and not np.isnan(denom):
+    #         v = float((w0 @ vs) / denom)
+    #         w = float((w0 @ ws) / denom)
+    #     else:
+    #         # fallback to the smooth nominal command (ut) if sampling failed
+    #         # note: 'ut' was defined earlier as the nominal [v,ω] toward the goal
+    #         v, w = ut
+    #     # ─────────────────────────────────────────────────────────────
+
+    #     # clip & return
+    #     v = np.clip(v, -cfg['max_speed'],   cfg['max_speed'])
+    #     w = np.clip(w, -cfg['max_yaw_rate'], cfg['max_yaw_rate'])
+
+
+    #     return v, w
 
     def motion(self, state, control):
         x, y, θ = state[0], state[1], state[2]
