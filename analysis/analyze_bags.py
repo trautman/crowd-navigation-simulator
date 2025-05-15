@@ -7,6 +7,7 @@ from matplotlib.ticker import MaxNLocator
 import matplotlib.gridspec as gridspec
 from scipy.stats import linregress
 
+
 def load_metric(data_dir, prefix):
     """
     Load metric files from data_dir matching prefix, return list of lists per trial.
@@ -40,7 +41,8 @@ def main():
     parser = argparse.ArgumentParser(
         description='Analyze trial metrics versus crowd density.'
     )
-    mode_group = parser.add_mutually_exclusive_group(required=True)
+    # mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group = parser.add_mutually_exclusive_group(required=False)
     mode_group.add_argument('--scatter', action='store_true', help='Show scatter plots of selected metrics.')
     mode_group.add_argument('--binned', action='store_true', help='Show binned mean+95% CI plots of selected metrics.')
     parser.add_argument('--data-dir', dest='data_root', required=True,
@@ -60,6 +62,12 @@ def main():
 
     args = parser.parse_args()
 
+    # If the user only wants YAML, skip the scatter/binned requirement
+    if not args.write_to_yaml:
+        # in all other cases we must have either --scatter or --binned
+        if not (args.scatter or args.binned):
+            parser.error('Must specify one of --scatter, --binned, or --write_to_yaml.')
+
     # if --all, enable all metrics
     metric_flags = ['density','average_safety_distance','min_safety_distance',
                     'translational_velocity','path_length','efficiency',
@@ -67,13 +75,17 @@ def main():
     if args.all:
         for mf in metric_flags:
             setattr(args, mf, True)
-    if not args.all and not any(getattr(args, mf) for mf in metric_flags):
-        parser.error('No metric specified; use --all or at least one metric flag.')
-
+    # if not args.all and not any(getattr(args, mf) for mf in metric_flags):
+    #     parser.error('No metric specified; use --all or at least one metric flag.')
+    if not args.all and not any(getattr(args, mf) for mf in metric_flags) and not args.write_to_yaml:
+        parser.error('No metric specified; use --all, a metric flag, or --write_to_yaml.')
 
 
     data_root = args.data_root
     # create YAML output folder if needed
+    # yaml_dir = os.path.join(data_root, 'yaml_files')
+    # if args.write_to_yaml:
+    #     os.makedirs(yaml_dir, exist_ok=True)
     yaml_dir = os.path.join(data_root, 'yaml_files')
     if args.write_to_yaml:
         os.makedirs(yaml_dir, exist_ok=True)
@@ -91,7 +103,7 @@ def main():
     density_metrics = load_metric(dirs['density'], 'density_trial_')
     density_means, density_stds = compute_stats(density_metrics)
     # density plots
-    if args.density:
+    if args.density and not args.giant_plot:
         bin_width = 0.05
         bins = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
         fig, axes = plt.subplots(1,2,figsize=(12,5))
@@ -143,8 +155,42 @@ def main():
     }
 
 
+    # ── WRITE ALL BINS TO YAML AND EXIT ──────────────────────────
+    if args.write_to_yaml:
+        # we only need one bin_width and density_means for all metrics
+        bin_width = 0.05
+        edges = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
+        for flag, (values, ylabel, name) in metrics_map.items():
+            centers, m_means, m_stds, m_ns = [], [], [], []
+            for i in range(len(edges)-1):
+                mask = (density_means >= edges[i]) & (density_means < edges[i+1])
+                if mask.any():
+                    d     = values[mask]
+                    n     = d.size
+                    mu    = d.mean()
+                    sigma = d.std(ddof=0)
+                    # centers.append((edges[i]+edges[i+1]) / 2)
+                    centers.append(edges[i])
+                    m_means.append(mu)
+                    m_stds.append(sigma)
+                    m_ns.append(n)
 
-    if args.binned and args.giant_plot or args.scatter and args.giant_plot:
+            out_file = os.path.join(yaml_dir, f"sim_arcade_BRNE_ORCA_{flag}.yaml")
+            with open(out_file, 'w') as f:
+                f.write("site: Arcade\n")
+                f.write("state: ORCA\n")
+                f.write("baseline: BRNE\n")
+                f.write(f"metric: {name}\n")
+                f.write("bin: [" + ", ".join(f"{b:.2f}" for b in centers) + "]\n")
+                f.write("mean: ["+ ", ".join(f"{m:.3f}" for m in m_means) + "]\n")
+                f.write("std: [" + ", ".join(f"{s:.3f}" for s in m_stds)   + "]\n")
+                f.write("N: ["   + ", ".join(str(n) for n in m_ns)           + "]\n")
+            print(f"Saved YAML → {out_file}")
+        return
+
+
+
+    if (args.binned and args.giant_plot) or (args.scatter and args.giant_plot):
         # which metrics (excluding density) to plot below the top row
         metric_keys = [k for k in metrics_map if k != 'density']
         n_metrics   = len(metric_keys)
@@ -199,40 +245,6 @@ def main():
         ax1.set_title('Density Mean ± Std')
 
 
-
-
-        # # ── Top‐left: Density Histogram ─────────────────────────────────
-        # ax0 = fig.add_subplot(gs[0, 0])
-        # bins = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
-        # counts, _, patches = ax0.hist(density_means, bins=bins,
-        #                               edgecolor='black', alpha=0.7)
-        # ax0.set_xlim(0, density_means.max()*1.05)
-        # ax0.set_ylim(0, counts.max()*1.15)
-        # # annotate count + percent
-        # total = len(density_means)
-        # yoff  = 0.02 * ax0.get_ylim()[1]
-        # for cnt, patch in zip(counts, patches):
-        #     if cnt > 0:
-        #         x = patch.get_x() + patch.get_width()/2
-        #         pct = cnt/total*100
-        #         ax0.text(x, cnt+yoff, f"{int(cnt)}", ha='center', va='bottom')
-        #         ax0.text(x, cnt-yoff, f"{pct:.0f}%", ha='center', va='top')
-        # ax0.set_title('Density Histogram')
-        # ax0.set_xlabel('Density (ped/m²)')
-        # ax0.set_ylabel('Count')
-
-        # # ── Top‐right: Mean Density ± Std vs Trial Number ────────────────
-        # ax1 = fig.add_subplot(gs[0, 1])
-        # trials = np.arange(1, len(density_means) + 1)
-        # ax1.errorbar(trials, density_means, yerr=density_stds,
-        #              fmt='-o', capsize=5, markeredgecolor='black')
-        # ax1.set_xlim(0, len(trials) + 1)
-        # ax1.set_ylim(0, density_means.max()*1.05)
-        # ax1.set_title('Mean Density ± Std per Trial')
-        # ax1.set_xlabel('Trial Number')
-        # ax1.set_ylabel('Density (ped/m²)')
-
-
         # ── Other metrics beneath ──────────────────────────────────────
         for idx, key in enumerate(metric_keys):
             vals   = metrics_map[key][0]
@@ -276,9 +288,8 @@ def main():
 
         plt.tight_layout()
         plt.show()
-        sys.exit(0)    
-
-
+        # sys.exit(0)
+        return    
 
 
 
@@ -317,23 +328,28 @@ def main():
                 plt.plot(centers, fit_line, 'r--',
                          label=f'y={slope:.3f}x+{intercept:.3f}, r={r_value:.3f}, p={p_value:.3f}')
                 if args.write_to_yaml:
-                    yaml_dict = {
-                        'site': 'Arcade',
-                        'state': 'ORCA',
-                        'baseline': 'BRNE',
-                        'metric': name,
-                        'mean': [float(f'{x:.4f}') for x in m_means],
-                        'std':  [float(f'{x:.4f}') for x in m_stds],
-                        'N':    [int(x) for x in m_ns],
-                        'bin':  [float(f'{x:.4f}') for x in centers]
-                    }
-                    yaml_file = os.path.join(
-                        yaml_dir,
-                        f"sim_arcade_BRNE_ORCA_{flag}.yaml"
-                    )
-                    with open(yaml_file, 'w') as yf:
-                        yaml.safe_dump(yaml_dict, yf, default_flow_style=True)
-                    print(f"Saved YAML for {name} → {yaml_file}")
+                    out_file = os.path.join(yaml_dir, f"sim_arcade_BRNE_ORCA_{flag}.yaml")
+                    with open(out_file, 'w') as f:
+                        f.write("site: Arcade\n")
+                        f.write("state: ORCA\n")
+                        f.write("baseline: BRNE\n")
+                        f.write(f"metric: {name}\n")
+                        # inline lists exactly as in reference
+                        f.write("mean: [" +
+                                ", ".join(f"{v:.3f}" for v in m_means) +
+                                "]\n")
+                        f.write("std: [" +
+                                ", ".join(f"{v:.3f}" for v in m_stds) +
+                                "]\n")
+                        f.write("N: [" +
+                                ", ".join(str(int(n)) for n in m_ns) +
+                                "]\n")
+                        f.write("bin: [" +
+                                ", ".join(f"{b:.2f}" for b in centers) +
+                                "]\n")
+                    print(f"Saved YAML for {name} → {out_file}")
+            
+
             plt.xlabel('Mean Density (ped/m²)')
             plt.ylabel(ylabel)
             title = f'{name} vs Density'
