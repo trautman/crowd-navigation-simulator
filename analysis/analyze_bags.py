@@ -4,6 +4,7 @@ import yaml
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+import matplotlib.gridspec as gridspec
 from scipy.stats import linregress
 
 def load_metric(data_dir, prefix):
@@ -55,6 +56,8 @@ def main():
     parser.add_argument('--time_not_moving',         action='store_true', help='Plot total time not moving vs density.')
     parser.add_argument('--travel_time',             action='store_true', help='Plot total travel time vs density.')
     parser.add_argument('--write_to_yaml',           action='store_true', help='Write YAML files for binned metrics.')
+    parser.add_argument('--giant_plot',  action='store_true', help='Show all selected metrics as a grid of subplots.')
+
     args = parser.parse_args()
 
     # if --all, enable all metrics
@@ -66,6 +69,8 @@ def main():
             setattr(args, mf, True)
     if not args.all and not any(getattr(args, mf) for mf in metric_flags):
         parser.error('No metric specified; use --all or at least one metric flag.')
+
+
 
     data_root = args.data_root
     # create YAML output folder if needed
@@ -136,6 +141,147 @@ def main():
         'time_not_moving':         (tn_totals,    'Total Time Not Moving (s)',   'Time Not Moving'),
         'travel_time':             (tt_totals,    'Total Travel Time (s)',       'Travel Time')
     }
+
+
+
+    if args.binned and args.giant_plot or args.scatter and args.giant_plot:
+        # which metrics (excluding density) to plot below the top row
+        metric_keys = [k for k in metrics_map if k != 'density']
+        n_metrics   = len(metric_keys)
+        n_cols      = 2
+        # one top row + enough rows to fit the rest in 2 columns
+        n_rows      = 1 + (n_metrics + n_cols - 1)//n_cols
+
+        fig = plt.figure(figsize=(10, 4*n_rows))
+        gs  = gridspec.GridSpec(n_rows, n_cols, figure=fig,
+                                 hspace=0.5, wspace=0.3)
+
+
+
+        # ── Top‐row density panels ───────────────────────────────────────
+
+        # Histogram (left)
+        ax0 = fig.add_subplot(gs[0, 0])
+        bin_width = 0.05
+        bins = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
+        counts, edges, patches = ax0.hist(
+            density_means, bins=bins, edgecolor='black', alpha=0.7
+        )
+        ax0.set_xlim(0, density_means.max()*1.05)
+        ax0.set_ylim(0, counts.max()*1.15)
+        num_trials = len(density_means)
+        y_off = 0.01 * ax0.get_ylim()[1]
+        for count, patch in zip(counts, patches):
+            if count > 0:
+                x = patch.get_x() + patch.get_width()/2
+                pct = (count/num_trials)*100
+                ax0.text(x, count+y_off, f"{pct:.0f}%", ha='center', va='bottom')
+                ax0.text(x, count-y_off, f"{int(count)}", ha='center', va='top')
+        ax0.set_xlabel('Mean Density (ped/m²)')
+        ax0.set_ylabel('Number of Trials')
+        ax0.set_title('Density Distribution')
+          
+        # Mean ± Std vs Trial (right)
+        ax1 = fig.add_subplot(gs[0, 1])
+        idx = np.argsort(density_means)
+        ax1.errorbar(
+            np.arange(1, num_trials+1),
+            density_means[idx],
+            yerr=density_stds[idx],
+            fmt='-o',
+            ecolor='gray',
+            capsize=5
+        )
+        ax1.set_xlim(0, num_trials+1)
+        ax1.set_ylim(0, density_means.max()*1.05)
+        ax1.set_xlabel('Trial (sorted)')
+        ax1.set_ylabel('Mean Density (ped/m²)')
+        ax1.set_title('Density Mean ± Std')
+
+
+
+
+        # # ── Top‐left: Density Histogram ─────────────────────────────────
+        # ax0 = fig.add_subplot(gs[0, 0])
+        # bins = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
+        # counts, _, patches = ax0.hist(density_means, bins=bins,
+        #                               edgecolor='black', alpha=0.7)
+        # ax0.set_xlim(0, density_means.max()*1.05)
+        # ax0.set_ylim(0, counts.max()*1.15)
+        # # annotate count + percent
+        # total = len(density_means)
+        # yoff  = 0.02 * ax0.get_ylim()[1]
+        # for cnt, patch in zip(counts, patches):
+        #     if cnt > 0:
+        #         x = patch.get_x() + patch.get_width()/2
+        #         pct = cnt/total*100
+        #         ax0.text(x, cnt+yoff, f"{int(cnt)}", ha='center', va='bottom')
+        #         ax0.text(x, cnt-yoff, f"{pct:.0f}%", ha='center', va='top')
+        # ax0.set_title('Density Histogram')
+        # ax0.set_xlabel('Density (ped/m²)')
+        # ax0.set_ylabel('Count')
+
+        # # ── Top‐right: Mean Density ± Std vs Trial Number ────────────────
+        # ax1 = fig.add_subplot(gs[0, 1])
+        # trials = np.arange(1, len(density_means) + 1)
+        # ax1.errorbar(trials, density_means, yerr=density_stds,
+        #              fmt='-o', capsize=5, markeredgecolor='black')
+        # ax1.set_xlim(0, len(trials) + 1)
+        # ax1.set_ylim(0, density_means.max()*1.05)
+        # ax1.set_title('Mean Density ± Std per Trial')
+        # ax1.set_xlabel('Trial Number')
+        # ax1.set_ylabel('Density (ped/m²)')
+
+
+        # ── Other metrics beneath ──────────────────────────────────────
+        for idx, key in enumerate(metric_keys):
+            vals   = metrics_map[key][0]
+            ylabel = metrics_map[key][1]
+            title  = metrics_map[key][2]
+            row = 1 + idx//n_cols
+            col = idx % n_cols
+            ax  = fig.add_subplot(gs[row, col])
+
+            if args.scatter:
+                ax.scatter(density_means, vals, s=50, edgecolor='black')
+                ax.set_ylim(0, vals.max()*1.05)
+            else:
+                # binned mean±CI
+                edges = np.arange(0, density_means.max()*1.05 + bin_width, bin_width)
+                ctrs, mus, cis = [], [], []
+                for i in range(len(edges)-1):
+                    mask = (density_means>=edges[i]) & (density_means<edges[i+1])
+                    if mask.any():
+                        d     = vals[mask]
+                        mu    = d.mean()
+                        sigma = d.std(ddof=0)
+                        ci95  = 1.96*sigma/np.sqrt(d.size)
+                        ctrs.append((edges[i]+edges[i+1])/2)
+                        mus.append(mu)
+                        cis.append(ci95)
+                ctrs = np.array(ctrs); mus = np.array(mus); cis = np.array(cis)
+                ax.errorbar(ctrs, mus, yerr=cis, fmt='-o', capsize=5)
+                # linear fit
+                if ctrs.size > 1:
+                    sl, ic, r, p, _ = linregress(ctrs, mus)
+                    ax.plot(ctrs, sl*ctrs+ic, 'r--',
+                            label=f'y={sl:.2f}x+{ic:.2f}, r²={r*r:.2g}, p={p:.2g}')
+                ax.legend(loc='best')
+                ax.set_ylim(0, mus.max()*1.05)
+
+            ax.set_xlim(0, density_means.max()*1.05)
+            ax.set_title(title + (' (scatter)' if args.scatter else ' (binned)'))
+            ax.set_xlabel('Density (ped/m²)')
+            ax.set_ylabel(ylabel)
+
+        plt.tight_layout()
+        plt.show()
+        sys.exit(0)    
+
+
+
+
+
     bin_width = 0.05
     xlim_low, xlim_high = 0, density_means.max()*1.05
 
