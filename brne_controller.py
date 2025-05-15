@@ -128,6 +128,21 @@ class BRNEController:
         x_min = self.x0 + cfg["corridor_y_min"]
         x_max = self.x0 + cfg["corridor_y_max"]
 
+        px, py, th = state[0], state[1], state[2]
+    # if we’re outside the lateral bounds, steer back to corridor center
+        if px < x_min or px > x_max:
+            # centerline x
+            x_center = self.x0 + 0.5*(cfg["corridor_y_min"] + cfg["corridor_y_max"])
+            # purely lateral correction
+            dx = x_center - px
+            # zero forward component—just turn in place toward center
+            desired = math.atan2(0.0, dx)  
+            err     = (desired - th + math.pi) % (2*math.pi) - math.pi
+            w_back  = np.clip(err, -cfg["max_yaw_rate"], cfg["max_yaw_rate"])
+            v_back  = 0.0  # spin in place; or use nominal_vel if you want to drive laterally
+            return v_back, w_back
+
+
         # 2.6) Call the NE optimizer with the correct num_agents
         W = brne_nav(
             xtraj, ytraj,
