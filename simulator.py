@@ -42,20 +42,48 @@ def random_spawners_from_env(env_cfg, sim_cfg, robot_start=None):
     Ignores robot_start since these blocks lie well outside it.
     """
 
-    # define your four blocks
-    blocks = {
-      'block1': ((5,  8),   (-11, -8)),
-      'block2': ((10, 11),   (7,   9)),
-      'block3': ((4,  5.5),    (11,  14)),
-      'block4': ((2.5,  3),    (-5,    2.5)),
-    }
-    # mapping start→goal
-    pair = {
-      'block1':'block3',
-      'block3':'block1',
-      'block2':'block4',
-      'block4':'block2'
-    }
+    # # define your four blocks
+    # blocks = {
+    #   'block1': ((5,  8),   (-11, -8)),
+    #   'block2': ((10, 11),   (7,   9)),
+    #   'block3': ((4,  5.5),    (11,  14)),
+    #   'block4': ((2.5,  3),    (-5,    2.5)),
+    # }
+    # # mapping start→goal
+    # pair = {
+    #   'block1':'block3',
+    #   'block3':'block1',
+    #   'block2':'block4',
+    #   'block4':'block2'
+    # }
+    # pick blocks & pair definitions based on env file
+    env_file = env_cfg.get('_env_file', '')
+    if 'perks' in env_file:
+        # ── PERKS environment spawner blocks ───────────────────────
+        blocks = {
+          'pblock1': ((0, 5), (-12, -7)),
+          'pblock2': ((0, 5), (8, 10)),
+          # … fill in your perks‐specific coordinate ranges …
+        }
+        pair = {
+          'pblock1': 'pblock2',
+          'pblock2': 'pblock1',
+          # … etc. …
+        }
+    else:
+        # ── BOARDWALK environment spawner blocks ─────────────────── :contentReference[oaicite:0]{index=0}:contentReference[oaicite:1]{index=1}
+        blocks = {
+          'block1': ((5,   8),    (-11,  -8)),
+          'block2': ((10, 11),    (7,     9)),
+          'block3': ((4,   5.5),  (11,   14)),
+          'block4': ((2.5, 3),    (-5,   2.5)),
+        }
+        pair = {
+          'block1': 'block3',
+          'block3': 'block1',
+          'block2': 'block4',
+          'block4': 'block2',
+        }
 
     rate_min = sim_cfg.get('spawn_rate_min', 0.1)
     rate_max = sim_cfg.get('spawn_rate_max', 1.0)
@@ -92,6 +120,23 @@ def run_sim(env_conf, sim_conf, gui=False):
     print(f"GUI = {'ON' if gui else 'OFF'}")
     env_cfg = load_config(env_conf)
     sim_cfg = load_config(sim_conf)
+    env_cfg['_env_file'] = os.path.basename(env_conf).lower()
+
+
+    # — if loading the "perks" environment, rotate it 90° clockwise —
+    if os.path.basename(env_conf).lower() == 'perks.yaml':
+        def _rotate90cw(item):
+            # rotate point (x,y) → (y, -x)
+            x, y = item['pos_x'], item['pos_y']
+            item['pos_x'], item['pos_y'] = y, -x
+            # and spin the object itself by +90°
+            if 'rot_z' in item:
+                item['rot_z'] = (item.get('rot_z', 0.0) + 90.0) % 360.0
+            return item
+
+        # apply to floors and walls lists in place
+        env_cfg['floors'] = [_rotate90cw(f) for f in env_cfg.get('floors', [])]
+        env_cfg['walls']  = [_rotate90cw(w) for w in env_cfg.get('walls', [])]
 
     # ── Visualization settings ───────────────────────────────
     viz_cfg      = sim_cfg.get('visualization', {})
