@@ -33,8 +33,11 @@ def compute_stats(metrics):
     """
     if len(metrics) == 0:
         return np.array([]), np.array([])
+    # means = np.array([np.mean(m) for m in metrics])
+    # stds  = np.array([np.std(m)  for m in metrics])
     means = np.array([np.mean(m) for m in metrics])
-    stds  = np.array([np.std(m)  for m in metrics])
+    # use sample‐std (ddof=1) to avoid underestimating the spread
+    stds  = np.array([np.std(m, ddof=1) if len(m)>1 else 0.0 for m in metrics])
     return means, stds
 
 def main():
@@ -58,6 +61,9 @@ def main():
     parser.add_argument('--time_not_moving',         action='store_true', help='Plot total time not moving vs density.')
     parser.add_argument('--travel_time',             action='store_true', help='Plot total travel time vs density.')
     parser.add_argument('--write_to_yaml',           action='store_true', help='Write YAML files for binned metrics.')
+    parser.add_argument('--site',                    help='Site name to embed in YAML and filename (e.g. Arcade)')
+    parser.add_argument('--baseline',                help='Baseline name to embed in YAML and filename (e.g. BRNE)')
+    parser.add_argument('--state',                   help='State name to embed in YAML and filename (e.g. ORCA)')    
     parser.add_argument('--giant_plot',  action='store_true', help='Show all selected metrics as a grid of subplots.')
 
     args = parser.parse_args()
@@ -67,6 +73,11 @@ def main():
         # in all other cases we must have either --scatter or --binned
         if not (args.scatter or args.binned):
             parser.error('Must specify one of --scatter, --binned, or --write_to_yaml.')
+    else:
+        # in YAML mode, require the three identifiers
+        if not (args.site and args.baseline and args.state):
+            parser.error('--write_to_yaml requires --site, --baseline, and --state.')
+
 
     # if --all, enable all metrics
     metric_flags = ['density','average_safety_distance','min_safety_distance',
@@ -168,18 +179,25 @@ def main():
                     d     = values[mask]
                     n     = d.size
                     mu    = d.mean()
-                    sigma = d.std(ddof=0)
+                    # sigma = d.std(ddof=0)
+                    sigma = d.std(ddof=1) if len(d)>1 else 0.0
                     # centers.append((edges[i]+edges[i+1]) / 2)
                     centers.append(edges[i])
                     m_means.append(mu)
                     m_stds.append(sigma)
                     m_ns.append(n)
 
-            out_file = os.path.join(yaml_dir, f"sim_arcade_BRNE_ORCA_{flag}.yaml")
+            # out_file = os.path.join(yaml_dir, f"sim_arcade_BRNE_ORCA_{flag}.yaml")
+            # use the user-passed identifiers in the filename
+            fname    = f"sim_{args.site}_{args.baseline}_{args.state}_{flag}.yaml"
+            out_file = os.path.join(yaml_dir, fname)
             with open(out_file, 'w') as f:
-                f.write("site: Arcade\n")
-                f.write("state: ORCA\n")
-                f.write("baseline: BRNE\n")
+                # f.write("site: Arcade\n")
+                # f.write("state: ORCA\n")
+                # f.write("baseline: BRNE\n")
+                f.write(f"site: {args.site}\n")
+                f.write(f"state: {args.state}\n")
+                f.write(f"baseline: {args.baseline}\n")
                 f.write(f"metric: {name}\n")
                 f.write("bin: [" + ", ".join(f"{b:.2f}" for b in centers) + "]\n")
                 f.write("mean: ["+ ", ".join(f"{m:.3f}" for m in m_means) + "]\n")
@@ -266,7 +284,8 @@ def main():
                     if mask.any():
                         d     = vals[mask]
                         mu    = d.mean()
-                        sigma = d.std(ddof=0)
+                        # sigma = d.std(ddof=0)
+                        sigma = d.std(ddof=1) if len(d)>1 else 0.0
                         ci95  = 1.96*sigma/np.sqrt(d.size)
                         ctrs.append((edges[i]+edges[i+1])/2)
                         mus.append(mu)
@@ -310,7 +329,8 @@ def main():
                         data  = values[mask]
                         n     = data.size
                         mu    = data.mean()
-                        sigma = data.std(ddof=0)
+                        # sigma = data.std(ddof=0)
+                        sigma = d.std(ddof=1) if len(d)>1 else 0.0
                         ci95  = 1.96 * sigma / np.sqrt(n)
                         centers.append((edges[i]+edges[i+1])/2)
                         m_means.append(mu)
