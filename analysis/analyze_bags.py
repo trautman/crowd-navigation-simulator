@@ -325,18 +325,30 @@ def main():
                 centers, m_means, m_stds, m_ns, m_cis = [], [], [], [], []
                 for i in range(len(edges)-1):
                     mask = (density_means >= edges[i]) & (density_means < edges[i+1])
+                    # if np.any(mask):
+                    #     data  = values[mask]
+                    #     n     = data.size
+                    #     mu    = data.mean()
+                    #     # sigma = data.std(ddof=0)
+                    #     sigma = d.std(ddof=1) if len(d)>1 else 0.0
+                    #     ci95  = 1.96 * sigma / np.sqrt(n)
+                    #     centers.append((edges[i]+edges[i+1])/2)
+                    #     m_means.append(mu)
+                    #     m_stds.append(sigma)
+                    #     m_ns.append(n)
+                    #     m_cis.append(ci95)
                     if np.any(mask):
                         data  = values[mask]
                         n     = data.size
                         mu    = data.mean()
-                        # sigma = data.std(ddof=0)
-                        sigma = d.std(ddof=1) if len(d)>1 else 0.0
+                        # use sample-std on 'data', not the undefined 'd'
+                        sigma = data.std(ddof=1) if n>1 else 0.0
                         ci95  = 1.96 * sigma / np.sqrt(n)
                         centers.append((edges[i]+edges[i+1])/2)
                         m_means.append(mu)
                         m_stds.append(sigma)
                         m_ns.append(n)
-                        m_cis.append(ci95)
+                        m_cis.append(ci95)                    
                 centers = np.array(centers)
                 m_means = np.array(m_means)
                 m_stds  = np.array(m_stds)
