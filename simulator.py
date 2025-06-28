@@ -71,7 +71,7 @@ def random_spawners_from_env(env_cfg, sim_cfg, robot_start=None):
           # … etc. …
         }
     else:
-        # ── BOARDWALK environment spawner blocks ─────────────────── :contentReference[oaicite:0]{index=0}:contentReference[oaicite:1]{index=1}
+        # ── BOARDWALK environment spawner blocks ────────────────
         blocks = {
           'block1': ((5,   8),    (-11,  -8)),
           'block2': ((10, 11),    (7,     9)),
@@ -116,7 +116,8 @@ def random_spawners_from_env(env_cfg, sim_cfg, robot_start=None):
     return spawners
 
 
-def run_sim(env_conf, sim_conf, gui=False):
+# def run_sim(env_conf, sim_conf, gui=False):
+def run_sim(env_conf, sim_conf, gui=False, output_base=None):
     print(f"GUI = {'ON' if gui else 'OFF'}")
     env_cfg = load_config(env_conf)
     sim_cfg = load_config(sim_conf)
@@ -166,18 +167,31 @@ def run_sim(env_conf, sim_conf, gui=False):
     start = np.array(R['start'])
     goal  = np.array(R['goal'])
 
-    out_dir            = 'density'
+
+    base = output_base or '.'
+
+    out_dir       = os.path.join(base, 'density')
+    safety_dir    = os.path.join(base, 'safety_distances')
+    trans_vel_dir = os.path.join(base, 'translational_velocity')
+    path_len_dir  = os.path.join(base, 'path_length')
+    time_dir      = os.path.join(base, 'travel_time')
+    stop_time_dir = os.path.join(base, 'time_not_moving')
+    # out_dir            = 'density'
+    # safety_dir         = 'safety_distances'
+    # trans_vel_dir      = 'translational_velocity'
+    # path_len_dir       = 'path_length'
+    # time_dir           = 'travel_time'
+    # stop_time_dir      = 'time_not_moving'
+
     os.makedirs(out_dir, exist_ok=True)
-    safety_dir         = 'safety_distances'
     os.makedirs(safety_dir, exist_ok=True)
-    trans_vel_dir      = 'translational_velocity'
     os.makedirs(trans_vel_dir, exist_ok=True)
-    path_len_dir       = 'path_length'
     os.makedirs(path_len_dir, exist_ok=True)
-    time_dir           = 'travel_time'
     os.makedirs(time_dir, exist_ok=True)
-    stop_time_dir      = 'time_not_moving'
     os.makedirs(stop_time_dir, exist_ok=True)
+
+
+
 
     for trial in range(1, n_trials+1):
         print(f"\n=== Trial {trial}/{n_trials} ===")
@@ -545,5 +559,10 @@ if __name__=='__main__':
     p.add_argument('--sim-config', default='simulator_config.yaml')
     p.add_argument('-g','--gui', action='store_true',
                    help='Live-plot each trial')
+    # args = p.parse_args()
+    # run_sim(args.env_config, args.sim_config, gui=args.gui)
+    p.add_argument('--write_data_to', default=None,
+                   help='Optional base directory for saving metric outputs')
     args = p.parse_args()
-    run_sim(args.env_config, args.sim_config, gui=args.gui)
+    run_sim(args.env_config, args.sim_config, gui=args.gui, output_base=args.write_data_to)
+
