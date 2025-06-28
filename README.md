@@ -24,7 +24,7 @@ cd crowd-navigation-simulator
 python simulator.py \
     --env-config env-configs/boardwalk.yaml \
     --sim-config trials/<site>/<scenario>/RUN/simulator_config.yaml \
-    --write_data_to trials/<site>/<scenario>/data \
+    --write_data_to trials/<site>/<scenario>/RUN/data/ \
     --gui
 ```
 
@@ -113,11 +113,6 @@ python clean_by_path_length.py \
     --thresh 12
 ```
 
-You can also run this over globbed directories like:
-
-```bash
-python clean_by_path_length.py --data-dir ../trials/brne/spawn_rates_*/data/ --thresh 12
-```
 
 ---
 
@@ -145,13 +140,3 @@ crowd-navigation-simulator/
 
 ---
 
-## 🧑‍🔬 Maintainer
-
-**Peter Trautman**  
-Roboticist — Researching shared control, human-robot coupling, and social navigation.
-
----
-
-## 📜 License
-
-This project is open source under the [MIT License](LICENSE).
